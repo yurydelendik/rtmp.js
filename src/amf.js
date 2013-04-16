@@ -25,9 +25,15 @@ var AMFUtils = (function AMFUtilsClosure() {
   var AMF0_OBJECT_MARKER = 0x03;
   var AMF0_NULL_MARKER = 0x05;
   var AMF0_UNDEFINED_MARKER = 0x06;
-  var AMF0_ARRAY_MARKER = 0x08;
-  var AMF0_END_MARKER = 0x09;
-  var AMF0_AVMPLUS_MARKER = 0x09;
+  var AMF0_REFERENCE_MARKER = 0x07;
+  var AMF0_ECMA_ARRAY_MARKER = 0x08;
+  var AMF0_OBJECT_END_MARKER = 0x09;
+  var AMF0_STRICT_ARRAY_MARKER = 0x0A;
+  var AMF0_DATE_MARKER = 0x0B;
+  var AMF0_LONG_STRING_MARKER = 0x0C;
+  var AMF0_XML_MARKER = 0x0F;
+  var AMF0_TYPED_OBJECT_MARKER = 0x10;
+  var AMF0_AVMPLUS_MARKER = 0x11;
 
   function writeString(ba, s) {
     if (s.length > 0xFFFF) {
@@ -78,21 +84,6 @@ var AMFUtils = (function AMFUtilsClosure() {
     return view.getFloat64(0, false);
   }
 
-  function repackageAvmObject(obj) {
-    if (!obj[VM_BINDINGS]) {
-      return obj;
-    }
-    var result = {};
-    for (var key in obj) {
-      if (isNumeric(key)) {
-        result[key] = obj[key];
-      } else if (key.indexOf('public$') === 0 &&
-                 obj[VM_BINDINGS].indexOf(key) < 0) {
-        result[key.substring(7)] = obj[key];
-      }
-    }
-    return result;
-  }
   function setAvmProperty(obj, propertyName, value) {
     setProperty(obj, isNumeric(propertyName) ? propertyName :
       Multiname.fromSimpleName(propertyName), value);
@@ -120,29 +111,27 @@ var AMFUtils = (function AMFUtilsClosure() {
         if (obj === null) {
           ba.writeByte(AMF0_NULL_MARKER);
         } else if (Array.isArray(obj)) {
-          ba.writeByte(AMF0_ARRAY_MARKER);
+          ba.writeByte(AMF0_ECMA_ARRAY_MARKER);
           ba.writeByte((obj.length >>> 24) & 255);
           ba.writeByte((obj.length >> 16) & 255);
           ba.writeByte((obj.length >> 8) & 255);
           ba.writeByte(obj.length & 255);
-          obj = repackageAvmObject(obj);
-          for (var i in obj) {
-            writeString(ba, i);
-            this.write(ba, obj[i]);
-          }
+          forEachPublicProperty(obj, function (key, value) {
+            writeString(ba, key);
+            this.write(ba, value);
+          }, this);
           ba.writeByte(0x00);
           ba.writeByte(0x00);
-          ba.writeByte(AMF0_END_MARKER);
+          ba.writeByte(AMF0_OBJECT_END_MARKER);
         } else {
           ba.writeByte(AMF0_OBJECT_MARKER);
-          obj = repackageAvmObject(obj);
-          for (var i in obj) {
-            writeString(ba, i);
-            this.write(ba, obj[i]);
-          }
+          forEachPublicProperty(obj, function (key, value) {
+            writeString(ba, key);
+            this.write(ba, value);
+          }, this);
           ba.writeByte(0x00);
           ba.writeByte(0x00);
-          ba.writeByte(AMF0_END_MARKER);
+          ba.writeByte(AMF0_OBJECT_END_MARKER);
         }
         return;
       }
@@ -163,7 +152,7 @@ var AMFUtils = (function AMFUtilsClosure() {
           if (!key.length) break;
           setAvmProperty(obj, key, this.read(ba));
         }
-        if (ba.readByte() !== AMF0_END_MARKER) {
+        if (ba.readByte() !== AMF0_OBJECT_END_MARKER) {
           throw 'AMF0 End marker is not found';
         }
         return obj;
@@ -171,7 +160,7 @@ var AMFUtils = (function AMFUtilsClosure() {
         return null;
       case AMF0_UNDEFINED_MARKER:
         return undefined;
-      case AMF0_ARRAY_MARKER: // ECMA Array
+      case AMF0_ECMA_ARRAY_MARKER:
         var obj = [];
         obj.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
                      (ba.readByte() << 8) | ba.readByte();
@@ -180,12 +169,20 @@ var AMFUtils = (function AMFUtilsClosure() {
           if (!key.length) break;
           setAvmProperty(obj, key, this.read(ba));
         }
-        if (ba.readByte() !== AMF0_END_MARKER) {
+        if (ba.readByte() !== AMF0_OBJECT_END_MARKER) {
           throw 'AMF0 End marker is not found';
         }
         return obj;
+      case AMF0_STRICT_ARRAY_MARKER:
+        var obj = [];
+        obj.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
+                     (ba.readByte() << 8) | ba.readByte();
+        for (var i = 0; i < obj.length; i++) {
+          obj[i] = this.read(ba);
+        }
+        return obj;
       case AMF0_AVMPLUS_MARKER:
-        return readAmf3Data(ba, {});        
+        return readAmf3Data(ba, {});
       default:
         throw 'AMF0 Unknown marker ' + marker; 
       }
@@ -408,14 +405,13 @@ var AMFUtils = (function AMFUtilsClosure() {
           ++densePortionLength;
         }
         writeU29(ba, (densePortionLength << 1) | 1);
-        obj = repackageAvmObject(obj);
-        for (var i in obj) {
+        forEachPublicProperty(obj, function (i, value) {
           if (isNumeric(i) && i >= 0 && i < densePortionLength) {
-            continue;
+            return;
           }
           writeUTF8vr(ba, i, caches);
-          writeAmf3Data(ba, obj[i], caches);
-        }
+          writeAmf3Data(ba, value, caches);
+        });
         writeUTF8vr(ba, '', caches);
         for (var j = 0; j < densePortionLength; j++) {
           writeAmf3Data(ba, obj[j], caches);
@@ -432,13 +428,12 @@ var AMFUtils = (function AMFUtilsClosure() {
         if (writeCachedReference(ba, obj, caches))
           break;
         // TODO better AVM2 object serialization -- using simple method for now
-        obj = repackageAvmObject(obj);
         writeU29(ba, 11); // traits mode for dynamic type (xxx1011), no members
         writeUTF8vr(ba, '', caches); // empty class name
-        for (var i in obj) {
+        forEachPublicProperty(obj, function (i, value) {
           writeUTF8vr(ba, i, caches);
-          writeAmf3Data(ba, obj[i], caches);
-        }
+          writeAmf3Data(ba, value, caches);
+        });
         writeUTF8vr(ba, '', caches);
       }
       return;

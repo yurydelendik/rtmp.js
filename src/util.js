@@ -24,6 +24,12 @@ function isNumeric(a) { return +a == a; }
 
 function setProperty(obj, name, value) { obj[name] = value; }
 
+function forEachPublicProperty(obj, fn, thisArg) {
+  for (var i in obj) {
+    fn.call(thisArg, i, obj[i]);
+  }
+}
+
 var Multiname = {
   fromSimpleName: function (name) { return name; }
 };
