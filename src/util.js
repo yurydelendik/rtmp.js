@@ -63,8 +63,6 @@ function ByteArray(a) {
   return result;
 }
 
-var VM_BINDINGS = 'vm bindings';
-
 function utf8decode(str) {
   var bytes = new Uint8Array(str.length * 4);
   var b = 0;
@@ -146,3 +144,19 @@ function utf8encode(bytes) {
   return str;
 }
 
+function makeGlobal(exports) {
+  for (var i in exports) {
+    this[i] = exports[i];
+  }
+}
+
+if (typeof global !== 'undefined') {
+  global.RELEASE = RELEASE;
+  global.isNumeric = isNumeric;
+  global.setProperty = setProperty;
+  global.forEachPublicProperty = forEachPublicProperty;
+  global.Multiname = Multiname;
+  global.ByteArray = ByteArray;
+  global.utf8decode = utf8decode;
+  global.utf8encode = utf8encode;
+}

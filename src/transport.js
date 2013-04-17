@@ -199,3 +199,7 @@ console.log('message');
   return NetStream;
 })();
 
+if (typeof global !== 'undefined') {
+  global.NetStream = NetStream;
+  global.BaseTransport = BaseTransport;
+}

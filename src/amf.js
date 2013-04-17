@@ -451,3 +451,7 @@ var AMFUtils = (function AMFUtilsClosure() {
 
   return [amf0, null, null, amf3];
 })();
+
+if (typeof global !== 'undefined') {
+  global.AMFUtils = AMFUtils;
+}
