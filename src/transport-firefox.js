@@ -117,7 +117,7 @@ var RtmptTransport = (function RtmpTransportClosure() {
     var xhr = new XMLHttpRequest({mozSystem: true});
     xhr.open('POST', path, true);
     xhr.responseType = 'arraybuffer';
-    xhr.contentType = 'application/x-fcs';
+    xhr.setRequestHeader('Content-Type', 'application/x-fcs');
     xhr.onload = function (e) {
       onload(new Uint8Array(xhr.response), xhr.status);
     };

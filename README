@@ -43,7 +43,6 @@ https://github.com/mozilla-b2g/gaia/blob/master/apps/email/README.md :
 Setting up RTMP server
 ----------------------
 
-The Red5 server (http://www.red5.org/) is used for testing. To enable RTMPT,
-edit the conf/red5-core.xml file to uncomment RTMPT section.
-
+The Red5 server (http://www.red5.org/) is used for testing. Navigate to
+http://localhost:5080/installer/ at install the "OFLA Demo" application.
 
