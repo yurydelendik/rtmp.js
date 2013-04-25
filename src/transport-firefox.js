@@ -40,6 +40,26 @@ var RtmpTransport = (function RtmpTransportClosure() {
         var writeQueue = [], socketError = false;
         var socket = TCPSocket.open(this.host, this.port,
           { useSSL: this.ssl, binaryType: 'arraybuffer' });
+
+
+        // the socket send API changed (see 831107 and 863770), trying both
+        // kinds: Uint8Array first, then ArrayBuffer, and patching for
+        // subsequent calls.
+        var sendData = function (data) {
+          try {
+            var result = socket.send(data);
+            // old way is good
+            sendData = socket.send.bind(socket);
+            return result;
+          } catch (ex) {
+            // new version of API
+            sendData = function (data) {
+              return socket.send(data.buffer, data.byteOffset, data.byteLength);
+            };
+            return sendData(data);
+          }
+        };
+
         socket.onopen = function (e) {
           channel.ondata = function (data) {
             var buf = new Uint8Array(data);
@@ -48,7 +68,7 @@ var RtmpTransport = (function RtmpTransportClosure() {
               return;
             }
             RELEASE || console.info('Bytes written: ' + buf.length);
-            if (socket.send(buf)) {
+            if (sendData(buf)) {
               writeQueue.shift();
             }
           };
@@ -62,7 +82,7 @@ var RtmpTransport = (function RtmpTransportClosure() {
           RELEASE || console.info('Write completed');
           while (writeQueue.length > 0) {
             RELEASE || console.info('Bytes written: ' + writeQueue[0].length);
-            if (!socket.send(writeQueue[0])) {
+            if (!sendData(writeQueue[0])) {
               break;
             }
             writeQueue.shift();
