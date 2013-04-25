@@ -28,7 +28,7 @@ https://github.com/mozilla-b2g/gaia/blob/master/apps/email/README.md :
 - Grant permission for certain URL, e.g. evaluate in the error console:
 
 ```
-host = 'http://localhost:8000';
+host = 'http://test.local:8000';
 perm = Components.classes["@mozilla.org/permissionmanager;1"]
                  .createInstance(Components.interfaces.nsIPermissionManager);
 ios = Components.classes["@mozilla.org/network/io-service;1"]
