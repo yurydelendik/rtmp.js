@@ -42,7 +42,7 @@ var BaseTransport = (function BaseTransportClosure() {
           ba.writeObject(CONNECT_TRANSACTION_ID);
           ba.writeObject(properties);
           ba.writeObject(args || null);
-          console.log('.. Connect sent');
+          RELEASE || console.log('.. Connect sent');
           channel.send(MAIN_CHUNKED_STREAM_ID, {
             streamId: DEFAULT_STREAM_ID,
             typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
@@ -50,8 +50,9 @@ var BaseTransport = (function BaseTransportClosure() {
           });
         };
         channel.onmessage = function (message) {
-          console.log('.. Data received: typeId:' + message.typeId + ', streamId:' + message.streamId +
-                      ', cs: ' + message.chunkedStreamId);
+          RELEASE || console.log('.. Data received: typeId:' + message.typeId +
+                                 ', streamId:' + message.streamId +
+                                 ', cs: ' + message.chunkedStreamId);
 
           if (message.streamId !== 0) {
             transport.streams[message.streamId]._push(message);
@@ -92,7 +93,7 @@ var BaseTransport = (function BaseTransportClosure() {
           // TODO misc messages
         };
         channel.onusercontrolmessage = function (e) {
-          console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
+          RELEASE || console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
           if (transport.onevent) {
             transport.onevent({type: e.type, data: e.data});
           }
@@ -191,7 +192,29 @@ var NetStream = (function NetStreamClosure() {
     },
     _push: {
       value: function (message) {
-console.log('message');
+        switch (message.typeId) {
+        case 8:
+        case 9:
+          if (this.ondata) {
+            this.ondata(message);
+          }
+          break;
+        case 18:
+        case 20:
+          var args = [];
+          var ba = ByteArray(message.data);
+          ba.objectEncoding = 0;
+          while (ba.position < ba.length) {
+            args.push(ba.readObject());
+          }
+          if (message.typeId === 18 && this.onscriptdata) {
+            this.onscriptdata.apply(this, args);
+          }
+          if (message.typeId === 20 && this.oncallback) {
+            this.oncallback.apply(this, args);
+          }
+          break;
+        }
       }
     }
   });

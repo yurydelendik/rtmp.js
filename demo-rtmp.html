@@ -59,6 +59,14 @@ limitations under the License.
       console.log('#streamcreated: ' + e.streamId);
 
       var ns = e.stream;
+      ns.ondata = function (message) {
+        console.log('#packet (' + message.typeId + '): ' +
+          Array.prototype.map.call(message.data,
+          function (i) { return (i + 256).toString(16).substr(1); }).join(' ') );
+      };
+      ns.onscriptdata = function (type, data) {
+        console.log('#object: ' + type);
+      };
       ns.play('hobbit_vp6.flv');
     };
     rtmp.connect(props);
