@@ -83,7 +83,7 @@ var BaseTransport = (function BaseTransportClosure() {
               }
             } else {
               var commandObject = ba.readObject();
-              var response = ba.readObject();
+              var response = ba.position < ba.length ? ba.readObject() : undefined;
               if (transport.onresponse) {
                 transport.onresponse({commandName: commandName, transactionId: transactionId, commandObject: commandObject, response: response});
               }
@@ -133,7 +133,7 @@ var BaseTransport = (function BaseTransportClosure() {
           ba.writeObject(commandObject || null);
           channel.send(MAIN_CHUNKED_STREAM_ID, {
             streamId: DEFAULT_STREAM_ID,
-            typeId: 17, // ????
+            typeId: COMMAND_MESSAGE_AMF3_ID, // ????
             data: new Uint8Array(ba)
           });
           return;
@@ -149,6 +149,20 @@ var BaseTransport = (function BaseTransportClosure() {
           typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
           data: new Uint8Array(ba)
         });
+      }
+    },
+    setBuffer: {
+      value: function (ms) {
+        this.channel.sendUserControlMessage(3, new Uint8Array([
+          (DEFAULT_STREAM_ID >> 24) & 0xFF,
+          (DEFAULT_STREAM_ID >> 16) & 0xFF,
+          (DEFAULT_STREAM_ID >> 8) & 0xFF,
+          DEFAULT_STREAM_ID & 0xFF,
+          (ms >> 24) & 0xFF,
+          (ms >> 16) & 0xFF,
+          (ms >> 8) & 0xFF,
+          ms & 0xFF
+        ]));
       }
     },
     _sendCommand: {
