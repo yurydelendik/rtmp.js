@@ -265,17 +265,19 @@ ChunkedChannel.prototype = {
 
         if (ackWindowSize != this.ackWindowSize) {
           this.ackWindowSize = ackWindowSize;
-          var ackData = new Uint8Array([(this.bytesReceived >>> 24) & 0xFF,
-                                        (this.bytesReceived >>> 16) & 0xFF,
-                                        (this.bytesReceived >>> 8) & 0xFF,
-                                        this.bytesReceived & 0xFF]);
+          var ackData = new Uint8Array([(ackWindowSize >>> 24) & 0xFF,
+                                        (ackWindowSize >>> 16) & 0xFF,
+                                        (ackWindowSize >>> 8) & 0xFF,
+                                        ackWindowSize & 0xFF]);
           this._sendMessage(CONTROL_CHUNK_STREAM_ID, {
             typeId: ACK_WINDOW_SIZE_MESSAGE_ID,
             streamId: 0,
             data: ackData
           });
+          if (limitType != 2) {
+            this.bandwidthLimitType = limitType;
+          }
         }
-        this.bandwidthLimitType = limitType;
         break;
       }
     }.bind(this); 
@@ -303,12 +305,24 @@ ChunkedChannel.prototype = {
       throw 'Invalid chunkStreamId';
     return this._sendMessage(chunkStreamId, message);
   },
+  sendUserControlMessage: function (type, data) {
+    var eventData = new Uint8Array(2 + data.length);
+    eventData[0] = (type >> 8) & 0xFF;
+    eventData[1] = type & 0xFF;
+    eventData.set(data, 2);
+
+    this._sendMessage(CONTROL_CHUNK_STREAM_ID, {
+      typeId: USER_CONTROL_MESSAGE_ID,
+      streamId: 0,
+      data: eventData
+    });
+  },
   _sendAck: function () {
     var ackData = new Uint8Array([(this.bytesReceived >>> 24) & 0xFF,
                                   (this.bytesReceived >>> 16) & 0xFF,
                                   (this.bytesReceived >>> 8) & 0xFF,
                                   this.bytesReceived & 0xFF]);
-    _sendMessage(CONTROL_CHUNK_STREAM_ID, {
+    this._sendMessage(CONTROL_CHUNK_STREAM_ID, {
       typeId: ACK_MESSAGE_ID,
       streamId: 0,
       data: ackData
