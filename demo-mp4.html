@@ -28,11 +28,16 @@ limitations under the License.
     <p>Open the web console to see messages</p>
 
     <script>
+
+    var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "mp4:bear.mp4"};
+    //var startInfo = {schema: "rtmpt", host: "localhost", app: "oflaDemo", video: "mp4:mozilla_story.mp4"};
+    var mp4MaxSize = 400000;
+
     var props = {
-              app: 'oflaDemo',
+              app: startInfo.app,
               flashver: 'MAC 11,6,602,180',
               swfUrl: 'http://localhost:5080/demos/Something.swf',
-              tcUrl: 'rtmpt://localhost:8088/oflaDemo',
+              tcUrl: startInfo.schema + '://' + startInfo.host + '/' + startInfo.app,
               fpad: false,
               audioCodecs: 0x0FFF,
               videoCodecs: 0x00FF,
@@ -42,8 +47,9 @@ limitations under the License.
             };
 
 
-    //var rtmp = new RtmpTransport({host:'localhost', port:1935});
-    var rtmp = new RtmptTransport({host:'localhost', port:5080});
+    var rtmp = startInfo.schema == 'rtmp' ?
+      new RtmpTransport({host:startInfo.host, port:1935}) :
+      new RtmptTransport({host:startInfo.host, port:5080});
 
     rtmp.onresponse = function (e) {
       console.log('#response');
@@ -64,7 +70,12 @@ limitations under the License.
         console.log('#packet (' + message.typeId + '): ' +
           Array.prototype.map.call(message.data,
           function (i) { return (i + 256).toString(16).substr(1); }).join(' ') );
-        mp4.packet(message.typeId, message.data);
+        if (message.data.length > 0) {
+          mp4.packet(message.typeId, message.data);
+        }
+      };
+      ns.oncallback = function () {
+        console.log('#callback');
       };
       ns.onscriptdata = function (type, data) {
         console.log('#object: ' + type);
@@ -72,8 +83,8 @@ limitations under the License.
           mp4.init(data);
         }
       };
-      //ns.play('hobbit_vp6.flv');
-      ns.play('mp4:bear.mp4');
+      ns.play(startInfo.video);
+      //rtmp.setBuffer(0x7D0);
     };
     rtmp.connect(props);
 
@@ -87,19 +98,33 @@ limitations under the License.
     <video id="mp4video" autoplay controls></video>
     <script>
     var mp4 = {
+      packets: 0,
+      initialized: false,
+      pendingPackets: [],
       init: function (metadata) {
+        this.initialized = true;
         this.file = [];
         this.fileLength = 0;
-        this.packets = 0;
         this.mux = new MP4Mux(metadata);
         this.mux.ondata = function (data) {
+          if (this.fileLength > mp4MaxSize) return;
+
           this.file.push(data);
           this.fileLength += data.length;
           document.getElementById('mp4len').textContent = this.fileLength;
         }.bind(this);
+
+        // process pending data
+        while (this.pendingPackets.length > 0) {
+          this.mux.pushPacket.apply(this.mux, this.pendingPackets.shift());
+        }
       },
       packet: function (type, data) {
         document.getElementById('packets').textContent = ++this.packets;
+        if (!this.initialized) {
+          this.pendingPackets.push([type, new Uint8Array(data)]);
+          return;
+        }
         this.mux.pushPacket(type, new Uint8Array(data));
       },
       generate: function () {
