@@ -32,7 +32,7 @@ limitations under the License.
     var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "mp4:bear.mp4"};
     //var startInfo = {schema: "rtmpt", host: "localhost", app: "oflaDemo", video: "mp4:mozilla_story.mp4"};
     //var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "hobbit_vp6.flv"};
-    var mp4MaxSize = 400000;
+    var mp4MaxSize = 2000000;
 
     var props = {
               app: startInfo.app,
@@ -138,9 +138,8 @@ limitations under the License.
         var i = 0, data = new Uint8Array(this.fileLength);
         this.file.forEach(function (chunk) { data.set(chunk, i); i += chunk.length; });
 
-        var base64 = window.btoa(String.fromCharCode.apply(null, data));
         document.getElementById('mp4link').href =
-        document.getElementById('mp4video').src = 'data:application/octet-stream;base64,' + base64;
+        document.getElementById('mp4video').src = 'data:application/octet-stream;base64,' + base64ArrayBuffer(data);
       }
     };
     </script>
