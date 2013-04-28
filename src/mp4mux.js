@@ -56,6 +56,7 @@ var MP4Mux = (function MP4MuxClosure() {
 
   var SOUNDRATES = [5500, 11025, 22050, 44100];
   var SOUNDFORMATS = ['PCM', 'ADPCM', 'MP3', 'PCM le', 'Nellymouser16', 'Nellymouser8', 'Nellymouser', 'G.711 A-law', 'G.711 mu-law', null, 'AAC', 'Speex', 'MP3 8khz'];
+  var MP3_SOUND_CODEC_ID = 2;
   var AAC_SOUND_CODEC_ID = 10;
   function parseAudiodata(data) {
     var i = 0;
@@ -67,15 +68,25 @@ var MP4Mux = (function MP4MuxClosure() {
       channels: data[i] & 1 ? 2 : 1
     };
     i++;
-    if (result.codecId == AAC_SOUND_CODEC_ID) {
+    switch (result.codecId) {
+    case AAC_SOUND_CODEC_ID:
       var type = data[i++];
       result.packetType = type;
+      result.samples = 1024;
+      break;
+    case MP3_SOUND_CODEC_ID:
+      var version =(data[i + 1] >> 3) & 3; // 3 - MPEG 1
+      var layer = (data[i + 1] >> 1) & 3; // 3 - Layer I, 2 - II, 1 - III
+      result.samples = layer === 1 ? (version === 3 ? 1152 : 576) :
+        (layer === 3 ? 384 : 1152);
+      break;
     }
     result.data = data.subarray(i);
     return result;
   }
 
   var VIDEOCODECS = [null, 'JPEG', 'Sorenson', 'Screen', 'VP6', 'VP6 alpha', 'Screen2', 'AVC'];
+  var VP6_VIDEO_CODEC_ID = 4;
   var AVC_VIDEO_CODEC_ID = 7;
   function parseVideodata(data) {
     var i = 0;
@@ -94,6 +105,11 @@ var MP4Mux = (function MP4MuxClosure() {
       result.compositionTime = ((data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8)) >> 8;
       i += 3;
       break;
+    case VP6_VIDEO_CODEC_ID:
+      result.horizontalOffset = (data[i] >> 4) & 15;
+      result.verticalOffset = data[i] & 15;
+      i++;
+      break;
     }
     result.data = data.subarray(i);
     return result;
@@ -104,18 +120,57 @@ var MP4Mux = (function MP4MuxClosure() {
     this.tracks = [];
     this.audioTrackId = -1;
     this.videoTrackId = -1;
-    for (var i = 0; i < metadata.trackinfo.length; i++) {
-      var info = metadata.trackinfo[i];
-      if (info.sampledescription[0].sampletype === metadata.audiocodecid)
-        this.audioTrackId = i;
-      else if (info.sampledescription[0].sampletype === metadata.videocodecid)
-        this.videoTrackId = i;
-      this.tracks.push({
-        language: info.language,
-        type: info.sampledescription[0].sampletype,
-        timescale: info.timescale,
-        cache: []
-      });
+    this.waitForAdditionalData = false;
+    if (metadata.trackinfo) {
+      for (var i = 0; i < metadata.trackinfo.length; i++) {
+        var info = metadata.trackinfo[i];
+        var track = {
+          language: info.language,
+          type: info.sampledescription[0].sampletype,
+          timescale: info.timescale,
+          cache: []
+        };
+        if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
+          this.audioTrackId = i;
+          track.samplerate = metadata.audiosamplerate;
+          track.channels = metadata.audiochannels;
+        } else if (info.sampledescription[0].sampletype === metadata.videocodecid) {
+          this.videoTrackId = i;
+          track.framerate = metadata.videoframerate;
+          track.width = metadata.width;
+          track.height =  metadata.height;
+        }
+        this.tracks.push(track);
+      }
+      this.waitForAdditionalData = true;
+    } else {
+      if (metadata.audiocodecid) {
+        if (metadata.audiocodecid !== 2)
+          throw 'unsupported audio codec: ' + metadata.audiocodec;
+        this.audioTrackId = this.tracks.length;
+        this.tracks.push({
+          language: "unk",
+          type: "mp3",
+          timescale: metadata.audiosamplerate,
+          samplerate: metadata.audiosamplerate,
+          channels: metadata.audiochannels,
+          cache: []
+        });
+      }
+      if (metadata.videocodecid) {
+        if (metadata.videocodecid !== 4)
+          throw 'unsupported video codec: ' + metadata.videocodecid;
+        this.videoTrackId = this.tracks.length;
+        this.tracks.push({
+          language: "unk",
+          type: "vp6f",
+          timescale: 10000,
+          framerate: metadata.framerate,
+          width: metadata.width,
+          height: metadata.height,
+          cache: []
+        });
+      }
     }
     this.filePos = 0;
     this.cachedPackets = 0;
@@ -129,24 +184,41 @@ var MP4Mux = (function MP4MuxClosure() {
 
   MP4Mux.prototype = {
     pushPacket: function (type, data) {
+      if (this.state === 0 && !this.waitForAdditionalData) {
+        this.generateHeader();
+      }
+
       switch (type) {
       case AUDIO_PACKET: // audio
         var audioPacket = parseAudiodata(data);
-        if (audioPacket.codecId !== AAC_SOUND_CODEC_ID)
+        switch (audioPacket.codecId) {
+        default:
           throw 'unsupported audio codec: ' + audioPacket.codecDescription;
-        if (audioPacket.packetType !== 0 && this.state === 0)
-          this.generateHeader();
+        case MP3_SOUND_CODEC_ID:
+          break; // supported codec
+        case AAC_SOUND_CODEC_ID:
+          if (audioPacket.packetType !== 0 && this.state === 0)
+            this.generateHeader();
+          break;
+        }
         this.tracks[this.audioTrackId].cache.push(audioPacket);
         this.cachedPackets++;
         break;
       case VIDEO_PACKET:
         var videoPacket = parseVideodata(data);
-        if (videoPacket.codecId !== AVC_VIDEO_CODEC_ID)
+        switch (videoPacket.codecId) {
+        default:
           throw 'unsupported video codec: ' + videoPacket.codecDescription;
-        if (videoPacket.packetType !== 0 && this.state === 0)
-          this.generateHeader();
-        if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
-          this.chunk();
+        case VP6_VIDEO_CODEC_ID:
+          if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
+            this.chunk();
+          break; // supported
+        case AVC_VIDEO_CODEC_ID:
+          if (videoPacket.packetType !== 0 && this.state === 0)
+            this.generateHeader();
+          if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
+            this.chunk();
+        }
         this.tracks[this.videoTrackId].cache.push(videoPacket);
         this.cachedPackets++;
         break;
@@ -171,9 +243,42 @@ var MP4Mux = (function MP4MuxClosure() {
       for (var i = 0; i < this.tracks.length; i++) {
         var trak;
         var trackInfo = this.tracks[i], trackId = i + 1;
+        var isAudio;
         switch (trackInfo.type) {
         case 'mp4a':
           var audioSpecificConfig = trackInfo.cache[0].data;
+          codecInfo = tag('mp4a', [
+            hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000'),
+            tag('esds', [hex('000000000380808022000200048080801440150000000000FA000000000005808080'), audioSpecificConfig.length, audioSpecificConfig, hex('068080800102')])
+          ]);
+          isAudio = true;
+          break;
+        case 'mp3':
+          codecInfo = tag('.mp3', [
+            hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000')
+          ]);
+          isAudio = true;
+          break;
+        case 'avc1':
+          var avcC = trackInfo.cache[0].data;
+          codecInfo = tag('avc1', [
+            hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
+            tag('avcC', avcC)
+          ]);
+          isAudio = false;
+          break;
+        case 'vp6f':
+          codecInfo = tag('VP6F', [
+            hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
+            tag('glbl', [hex('00')])
+          ]);
+          isAudio = false;
+          break;
+        default:
+          throw 'not supported';
+        }
+
+        if (isAudio) {
           trak = tag('trak', [
             hex('0000005C746B68640000000F0000000000000000'), encodeInt32(trackId), hex('00000000FFFFFFFF00000000000000000000'), encodeUint16(i /*altgroup*/), encodeFloat16(1.0 /*volume*/), hex('0000000100000000000000000000000000000001000000000000000000000000000040000000'), encodeFloat(0/*width*/), encodeFloat(0/*height*/),
             tag('mdia', [
@@ -181,38 +286,28 @@ var MP4Mux = (function MP4MuxClosure() {
                 tag('minf', [
                 hex('00000010736D686400000000000000000000002464696E660000001C6472656600000000000000010000000C75726C2000000001'),
                 tag('stbl', [
-                  tag('stsd', [hex('0000000000000001'), tag('mp4a', [
-                    hex('00000000000000010000000000000000'), encodeUint16(metadata.audiochannels), hex('00100000'), encodeInt32(metadata.audiosamplerate), hex('0000'),
-                    tag('esds', [hex('000000000380808022000200048080801440150000000000FA000000000005808080'), audioSpecificConfig.length, audioSpecificConfig, hex('068080800102')])
-                  ])]),
+                  tag('stsd', [hex('0000000000000001'), codecInfo]),
                   hex('0000001073747473000000000000000000000010737473630000000000000000000000147374737A000000000000000000000000000000107374636F0000000000000000')
                 ])
               ])
             ])
           ]);
-          break;
-        case 'avc1':
-          var avcC = trackInfo.cache[0].data;
+        } else { // isVideo
           trak = tag('trak', [
-            hex('0000005C746B68640000000F0000000000000000'), encodeInt32(trackId), hex('00000000FFFFFFFF00000000000000000000'), encodeUint16(i /*altgroup*/), encodeFloat16(0 /*volume*/), hex('0000000100000000000000000000000000000001000000000000000000000000000040000000'), encodeFloat(metadata.width), encodeFloat(metadata.height),
+            hex('0000005C746B68640000000F0000000000000000'), encodeInt32(trackId), hex('00000000FFFFFFFF00000000000000000000'), encodeUint16(i /*altgroup*/), encodeFloat16(0 /*volume*/), hex('0000000100000000000000000000000000000001000000000000000000000000000040000000'), encodeFloat(trackInfo.width), encodeFloat(trackInfo.height),
             tag('mdia', [
               hex('000000206D6468640000000000000000000000000000'), encodeUint16(trackInfo.timescale), hex('FFFFFFFF'), encodeLang(trackInfo.language), hex('00000000002D68646C72000000000000000076696465000000000000000000000000566964656F48616E646C657200'),
               tag('minf', [
                 hex('00000014766D68640000000100000000000000000000002464696E660000001C6472656600000000000000010000000C75726C2000000001'),
                 tag('stbl', [
-                  tag('stsd', [hex('0000000000000001'), tag('avc1', [
-                    hex('000000000000000100000000000000000000000000000000'), encodeUint16(metadata.width), encodeUint16(metadata.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
-                    tag('avcC', avcC)
-                  ])]),
+                  tag('stsd', [hex('0000000000000001'), codecInfo]),
                   hex('0000001073747473000000000000000000000010737473630000000000000000000000147374737A000000000000000000000000000000107374636F0000000000000000')
                 ])
               ])
             ])
           ]);
-          break;
-        default:
-          throw 'not implemented';
         }
+
         trackInfo.cache = [];
         traks.push(trak);
       }
@@ -241,12 +336,12 @@ var MP4Mux = (function MP4MuxClosure() {
           continue;
         switch (trackInfo.type) {
         case 'mp4a':
-          var audioFrameDuration = (1024 / this.metadata.audiosamplerate * trackInfo.timescale) | 0;
-
+        case 'mp3':
           var trun1head = flatten([hex('00000305'), encodeInt32(trackInfo.cache.length)]);
           var trun1tail = [hex('02000000')];
           var tdat1 = [];
           for (var j = 0; j < trackInfo.cache.length; j++) {
+            var audioFrameDuration = (trackInfo.cache[j].samples / trackInfo.samplerate * trackInfo.timescale) | 0;
             tdat1.push(trackInfo.cache[j].data);
             trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(trackInfo.cache[j].data.length));
           }
@@ -258,7 +353,8 @@ var MP4Mux = (function MP4MuxClosure() {
           tdatParts.push(tdat1);
           break;
        case 'avc1':
-          var videoFrameDuration = (trackInfo.timescale / this.metadata.videoframerate) | 0;
+       case 'vp6f':
+          var videoFrameDuration = (trackInfo.timescale / trackInfo.framerate) | 0;
           var firstFrameFlags = trackInfo.cache[0].frameType !== 1 ? hex('01010000') : hex('02000000');
           var trun2head = flatten([hex('00000A05'), encodeInt32(trackInfo.cache.length)]);
           var trun2tail = [firstFrameFlags];
@@ -274,6 +370,8 @@ var MP4Mux = (function MP4MuxClosure() {
           trafParts.push({tfhd: tfhd2, trunHead: trun2head, trunTail: trun2tail});
           tdatParts.push(tdat2);
           break;
+        default:
+          throw 'unsupported codec';
         }
         trackInfo.cache = [];
       }

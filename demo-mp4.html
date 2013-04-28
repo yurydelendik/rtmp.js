@@ -31,6 +31,7 @@ limitations under the License.
 
     var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "mp4:bear.mp4"};
     //var startInfo = {schema: "rtmpt", host: "localhost", app: "oflaDemo", video: "mp4:mozilla_story.mp4"};
+    //var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "hobbit_vp6.flv"};
     var mp4MaxSize = 400000;
 
     var props = {
@@ -102,6 +103,10 @@ limitations under the License.
       initialized: false,
       pendingPackets: [],
       init: function (metadata) {
+        if (!metadata.audiocodecid && !metadata.videocodecid) {
+          return; // useless metadata?
+        }
+
         this.initialized = true;
         this.file = [];
         this.fileLength = 0;
