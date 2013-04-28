@@ -173,7 +173,7 @@ ChunkedChannel.prototype = {
           return;
         shiftBy = RANDOM_DATA_SIZE;
 
-        var timestamp = (Date.now | 0);
+        var timestamp = (Date.now() - this.epochStart) | 0;
         this.buffer[4] = (timestamp >>> 24) & 0xFF;
         this.buffer[5] = (timestamp >>> 16) & 0xFF;
         this.buffer[6] = (timestamp >>> 8) & 0xFF;
@@ -333,8 +333,8 @@ ChunkedChannel.prototype = {
     var messageLength = data.length;
     var chunkStream = this._getChunkStream(chunkStreamId);
       
-    var timestamp = ('timestamp' in message ? message.timestamp : Date.now) | 0;
-    var timestampDelta = (timestamp | chunkStream.sentTimestamp) | 0;
+    var timestamp = ('timestamp' in message ? message.timestamp : (Date.now()  - this.epochStart)) | 0;
+    var timestampDelta = (timestamp - chunkStream.sentTimestamp) | 0;
 
     var buffer = new Uint8Array(this.chunkSize + MAX_CHUNK_HEADER_SIZE);
     var chunkStreamIdSize;
@@ -401,6 +401,7 @@ ChunkedChannel.prototype = {
         buffer[position + 1] = (timestampDelta >> 8) & 0xFF;
         buffer[position + 2] = timestampDelta & 0xFF;
       }
+      position += 3;
     } else {
       // chunk type 3
       buffer[0] |= 0xC0;
@@ -535,14 +536,14 @@ ChunkedChannel.prototype = {
     return totalChunkHeaderSize + read;
   },
   start: function () {
-    this.epochStart = (Date.now | 0);
+    this.epochStart = Date.now();
     this.ondata([PROTOCOL_VERSION]); // c0
 
     this.randomData = new Uint8Array(RANDOM_DATA_SIZE);
-    this.randomData[0] = (this.epochStart >>> 24) & 0xFF;
-    this.randomData[1] = (this.epochStart >>> 16) & 0xFF;
-    this.randomData[2] = (this.epochStart >>> 8) & 0xFF;
-    this.randomData[3] = this.epochStart & 0xFF;
+    this.randomData[0] = 0;
+    this.randomData[1] = 0;
+    this.randomData[2] = 0;
+    this.randomData[3] = 0;
     for (var i = 8; i < RANDOM_DATA_SIZE; i++) {
       this.randomData[i] = (Math.random() * 256) | 0;
     }

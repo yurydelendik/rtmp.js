@@ -26,6 +26,10 @@ var BaseTransport = (function BaseTransportClosure() {
   var COMMAND_MESSAGE_AMF0_ID = 20;
   var COMMAND_MESSAGE_AMF3_ID = 17;
 
+  var SET_BUFFER_CONTROL_MESSAGE_ID = 3;
+  var PING_REQUEST_CONTROL_MESSAGE_ID = 6;
+  var PING_RESPONSE_CONTROL_MESSAGE_ID = 7;
+
   function BaseTransport() {
     this.streams = [];
   }
@@ -94,6 +98,9 @@ var BaseTransport = (function BaseTransportClosure() {
         };
         channel.onusercontrolmessage = function (e) {
           RELEASE || console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
+          if (e.type === PING_REQUEST_CONTROL_MESSAGE_ID) {
+            channel.sendUserControlMessage(PING_RESPONSE_CONTROL_MESSAGE_ID, e.data);
+          }
           if (transport.onevent) {
             transport.onevent({type: e.type, data: e.data});
           }
@@ -153,7 +160,7 @@ var BaseTransport = (function BaseTransportClosure() {
     },
     setBuffer: {
       value: function (ms) {
-        this.channel.sendUserControlMessage(3, new Uint8Array([
+        this.channel.sendUserControlMessage(SET_BUFFER_CONTROL_MESSAGE_ID, new Uint8Array([
           (DEFAULT_STREAM_ID >> 24) & 0xFF,
           (DEFAULT_STREAM_ID >> 16) & 0xFF,
           (DEFAULT_STREAM_ID >> 8) & 0xFF,
