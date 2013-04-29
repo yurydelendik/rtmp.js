@@ -85,6 +85,10 @@ var BaseTransport = (function BaseTransportClosure() {
                   transport.onstreamcreated({transactionId: transactionId, commandObject: commandObject, streamId: streamId, stream: stream, isError: isError});
                 }
               }
+            } else if (commandName === 'onBWCheck' || commandName === 'onBWDone') {
+              // TODO skipping those for now
+              transport.sendCommandOrResponse('_error', transactionId, null,
+                { code: 'NetConnection.Call.Failed', level: 'error' });
             } else {
               var commandObject = ba.readObject();
               var response = ba.position < ba.length ? ba.readObject() : undefined;
@@ -128,24 +132,28 @@ var BaseTransport = (function BaseTransportClosure() {
     },
     createStream: {
       value: function (transactionId, commandObject) {
+        this.sendCommandOrResponse('createStream', transactionId, commandObject);
+      }
+    },
+    sendCommandOrResponse: {
+      value: function (commandName, transactionId, commandObject, response) {
         var channel = this.channel;
 
-        if (true) {
-          // Weird stuff (RED5?)
-          var ba = new ByteArray();
-          ba.objectEncoding = TRANSPORT_ENCODING;
-          ba.writeByte(0); // ???
-          ba.writeObject('createStream');
-          ba.writeObject(transactionId);
-          ba.writeObject(commandObject || null);
-          channel.send(MAIN_CHUNKED_STREAM_ID, {
-            streamId: DEFAULT_STREAM_ID,
-            typeId: COMMAND_MESSAGE_AMF3_ID, // ????
-            data: new Uint8Array(ba)
-          });
-          return;
-        }
- 
+        var ba = new ByteArray();
+        ba.writeByte(0); // ???
+        ba.objectEncoding = 0; // TRANSPORT_ENCODING;
+        ba.writeObject(commandName);
+        ba.writeObject(transactionId);
+        ba.writeObject(commandObject || null);
+        if (arguments.length > 3)
+          ba.writeObject(response);
+        channel.send(MAIN_CHUNKED_STREAM_ID, {
+          streamId: DEFAULT_STREAM_ID,
+          typeId: COMMAND_MESSAGE_AMF3_ID,
+          data: new Uint8Array(ba)
+        });
+
+ /*     // really weird that this does not work
         var ba = new ByteArray();
         ba.objectEncoding = TRANSPORT_ENCODING;
         ba.writeObject('createStream');
@@ -156,6 +164,7 @@ var BaseTransport = (function BaseTransportClosure() {
           typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
           data: new Uint8Array(ba)
         });
+*/
       }
     },
     setBuffer: {
