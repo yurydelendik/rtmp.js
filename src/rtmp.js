@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-var MAX_CHUNKED_CHANNEL_BUFFER = 65536;
+var MAX_CHUNKED_CHANNEL_BUFFER = 0x40000;
 var RANDOM_DATA_SIZE = 1536;
 var PROTOCOL_VERSION = 3;
 
@@ -155,7 +155,7 @@ ChunkedChannel.prototype = {
     }
 
     while (this.bufferLength > 0) {
-      RELEASE || console.info('current bufferLength: ' + this.bufferLength + ' state:' + this.state);
+      // console.info('current bufferLength: ' + this.bufferLength + ' state:' + this.state);
       var shiftBy = 0;
       switch (this.state) {
       case 'uninitialized':
@@ -280,7 +280,7 @@ ChunkedChannel.prototype = {
         }
         break;
       }
-    }.bind(this); 
+    }.bind(this);
 
     if (this.oncreated) {
       this.oncreated();
@@ -373,7 +373,7 @@ ChunkedChannel.prototype = {
       buffer[position++] = (message.streamId >> 8) & 0xFF;
       buffer[position++] = (message.streamId >> 16) & 0xFF;
       buffer[position++] = (message.streamId >> 24) & 0xFF;
-    } else if (messageLength !== chunkStream.sentLength &&
+    } else if (messageLength !== chunkStream.sentLength ||
                message.typeId !== chunkStream.sentTypeId) {
       // chunk type 1
       buffer[0] |= 0x40;
@@ -422,7 +422,7 @@ ChunkedChannel.prototype = {
     while (sent < messageLength) {
       var currentChunkLength = Math.min(messageLength - sent, this.chunkSize);
       buffer.set(data.subarray(sent, sent + currentChunkLength), position);
-      sent += currentChunkLength; 
+      sent += currentChunkLength;
 
       this.ondata(buffer.subarray(0, position + currentChunkLength));
 
@@ -520,9 +520,9 @@ ChunkedChannel.prototype = {
     if (this.bufferLength < totalChunkHeaderSize + read)
       return;
 
-    RELEASE || console.log('Chunk received: cs:' + chunkStreamId + '; ' +
-                           'f/l:' + firstChunk + '/' + (!tailLength) + '; ' +
-                           'len:' + messageLength); 
+    RELEASE || (!firstChunk && tailLength) || // limiting trace to first/last chunks
+      console.log('Chunk received: cs:' + chunkStreamId + '; ' +
+      'f/l:' + firstChunk + '/' + (!tailLength) + ';  len:' + messageLength);
     chunkStream.lastTimestamp = chunkTimestamp;
     chunkStream.lastLength = messageLength;
     chunkStream.lastTypeId = messageTypeId;
