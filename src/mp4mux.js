@@ -261,6 +261,7 @@ var MP4Mux = (function MP4MuxClosure() {
           break;
         case 'avc1':
           var avcC = trackInfo.cache[0].data;
+          avcC[5] |= 0xE0; // !!! SPS has to have that
           codecInfo = tag('avc1', [
             hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
             tag('avcC', avcC)
@@ -347,8 +348,8 @@ var MP4Mux = (function MP4MuxClosure() {
           }
           trun1tail = flatten(trun1tail);
           tdat1 = flatten(tdat1);
-          var tfhd1 = tag('tfhd', [hex('00000039'), encodeInt32(trackId), moofOffset, hex('000004000000001A02000000')]);
-          moofLength += 8 + tfhd1.length + 8 + trun1head.length + 4 + trun1tail.length;
+          var tfhd1 = tag('tfhd', [hex('00020038'), encodeInt32(trackId), hex('000004000000001A02000000')]);
+          moofLength += 8 + tfhd1.length + 8 + trun1head.length + /* tfdt len */ 16 + 4 + trun1tail.length;
           trafParts.push({tfhd: tfhd1, trunHead: trun1head, trunTail: trun1tail});
           tdatParts.push(tdat1);
           break;
@@ -365,8 +366,8 @@ var MP4Mux = (function MP4MuxClosure() {
           }
           trun2tail = flatten(trun2tail);
           tdat2 = flatten(tdat2);
-          var tfhd2 = tag('tfhd', [hex('00000039'), encodeInt32(trackId), moofOffset, encodeInt32(videoFrameDuration), hex('0000127B01010000')]);
-          moofLength += 8 + tfhd2.length + 8 + trun2head.length + 4 + trun2tail.length;
+          var tfhd2 = tag('tfhd', [hex('00020038'), encodeInt32(trackId), encodeInt32(videoFrameDuration), hex('0000127B01010000')]);
+          moofLength += 8 + tfhd2.length + 8 + trun2head.length + /* tfdt len */ 16 + 4 + trun2tail.length;
           trafParts.push({tfhd: tfhd2, trunHead: trun2head, trunTail: trun2tail});
           tdatParts.push(tdat2);
           break;
@@ -379,12 +380,13 @@ var MP4Mux = (function MP4MuxClosure() {
       var moofParts = [moofHeader], tdatOffset = moofLength;
       for (var i = 0; i < trafParts.length; i++) {
         var traf = tag('traf', [trafParts[i].tfhd,
+		  tag('tfdt', [hex('00000000'), hex('00000000')]),
           tag('trun', [trafParts[i].trunHead, encodeInt32(tdatOffset), trafParts[i].trunTail]) ]);
         moofParts.push(traf);
         tdatOffset += tdatParts[i].length;
       }
 
-      var chunk = flatten([tag('moof', moofParts), tag('tdat', tdatParts)]);
+      var chunk = flatten([tag('moof', moofParts), tag('mdat', tdatParts)]);
       this.ondata(chunk);
       this.filePos += chunk.length;
       this.cachedPackets = 0;
