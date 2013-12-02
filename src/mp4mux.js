@@ -128,7 +128,8 @@ var MP4Mux = (function MP4MuxClosure() {
           language: info.language,
           type: info.sampledescription[0].sampletype,
           timescale: info.timescale,
-          cache: []
+          cache: [],
+          cachedDuration: 0
         };
         if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
           this.audioTrackId = i;
@@ -324,7 +325,7 @@ var MP4Mux = (function MP4MuxClosure() {
     },
     chunk: function () {
       var moofOffset = flatten([hex('00000000'), encodeInt32(this.filePos)]); // TODO
-      var trafParts = [], tdatParts = [];
+      var trafParts = [], tdatParts = [], tfdts = [];
 
       var moofHeader = flatten([hex('000000106D66686400000000'), encodeInt32(++this.chunkIndex)]);
       var moof = [moofHeader];
@@ -335,6 +336,8 @@ var MP4Mux = (function MP4MuxClosure() {
         var trackInfo = this.tracks[i], trackId = i + 1;
         if (trackInfo.cache.length === 0)
           continue;
+        tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(trackInfo.cachedDuration)]));
+        var totalDuration = 0;
         switch (trackInfo.type) {
         case 'mp4a':
         case 'mp3':
@@ -345,6 +348,7 @@ var MP4Mux = (function MP4MuxClosure() {
             var audioFrameDuration = (trackInfo.cache[j].samples / trackInfo.samplerate * trackInfo.timescale) | 0;
             tdat1.push(trackInfo.cache[j].data);
             trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(trackInfo.cache[j].data.length));
+            totalDuration += audioFrameDuration;
           }
           trun1tail = flatten(trun1tail);
           tdat1 = flatten(tdat1);
@@ -360,6 +364,7 @@ var MP4Mux = (function MP4MuxClosure() {
           var trun2head = flatten([hex('00000A05'), encodeInt32(trackInfo.cache.length)]);
           var trun2tail = [firstFrameFlags];
           var tdat2 = [];
+          totalDuration = trackInfo.cache.length * videoFrameDuration;
           for (var j = 0; j < trackInfo.cache.length; j++) {
             tdat2.push(trackInfo.cache[j].data);
             trun2tail.push(encodeInt32(trackInfo.cache[j].data.length), encodeInt32(trackInfo.cache[j].compositionTime));
@@ -374,13 +379,13 @@ var MP4Mux = (function MP4MuxClosure() {
         default:
           throw 'unsupported codec';
         }
+        trackInfo.cachedDuration += totalDuration;
         trackInfo.cache = [];
       }
 
       var moofParts = [moofHeader], tdatOffset = moofLength;
       for (var i = 0; i < trafParts.length; i++) {
-        var traf = tag('traf', [trafParts[i].tfhd,
-		  tag('tfdt', [hex('00000000'), hex('00000000')]),
+        var traf = tag('traf', [trafParts[i].tfhd, tfdts[i],
           tag('trun', [trafParts[i].trunHead, encodeInt32(tdatOffset), trafParts[i].trunTail]) ]);
         moofParts.push(traf);
         tdatOffset += tdatParts[i].length;
