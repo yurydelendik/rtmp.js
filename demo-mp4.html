@@ -135,11 +135,9 @@ limitations under the License.
       generate: function () {
         this.mux.flush();
 
-        var i = 0, data = new Uint8Array(this.fileLength);
-        this.file.forEach(function (chunk) { data.set(chunk, i); i += chunk.length; });
-
+        var blob = new Blob(this.file, {type: 'application/octet-stream'});
         document.getElementById('mp4link').href =
-        document.getElementById('mp4video').src = 'data:application/octet-stream;base64,' + base64ArrayBuffer(data);
+        document.getElementById('mp4video').src = URL.createObjectURL(blob);
       }
     };
     </script>
