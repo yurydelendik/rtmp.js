@@ -68,6 +68,10 @@ var BaseTransport = (function BaseTransportClosure() {
             var ba = new ByteArray(message.data);
             ba.objectEncoding = message.typeId === COMMAND_MESSAGE_AMF0_ID ? 0 : 3;
             var commandName = ba.readObject();
+            if (commandName === undefined) { // ??? not sure what specification says and what real stuff are
+              ba.objectEncoding = 0;
+              commandName = ba.readObject();
+            }
             var transactionId = ba.readObject();
             if (commandName === '_result' || commandName === '_error') {
               var isError = commandName === '_error';
@@ -167,13 +171,13 @@ var BaseTransport = (function BaseTransportClosure() {
 */
       }
     },
-    setBuffer: {
-      value: function (ms) {
+    _setBuffer: {
+      value: function (streamId, ms) {
         this.channel.sendUserControlMessage(SET_BUFFER_CONTROL_MESSAGE_ID, new Uint8Array([
-          (DEFAULT_STREAM_ID >> 24) & 0xFF,
-          (DEFAULT_STREAM_ID >> 16) & 0xFF,
-          (DEFAULT_STREAM_ID >> 8) & 0xFF,
-          DEFAULT_STREAM_ID & 0xFF,
+          (streamId >> 24) & 0xFF,
+          (streamId >> 16) & 0xFF,
+          (streamId >> 8) & 0xFF,
+          streamId & 0xFF,
           (ms >> 24) & 0xFF,
           (ms >> 16) & 0xFF,
           (ms >> 8) & 0xFF,
@@ -196,6 +200,8 @@ var BaseTransport = (function BaseTransportClosure() {
 })();
 
 var NetStream = (function NetStreamClosure() {
+  var DEFAULT_BUFFER_LENGTH = 100; // ms
+
   function NetStream(transport, streamId) {
     this.transport = transport;
     this.streamId = streamId;
@@ -218,6 +224,8 @@ var NetStream = (function NetStreamClosure() {
         if (arguments.length > 3)
           ba.writeObject(reset);
         this.transport._sendCommand(this.streamId, new Uint8Array(ba));
+        // set the buffer, otherwise it will stop in ~15 sec
+        this.transport._setBuffer(this.streamId, DEFAULT_BUFFER_LENGTH);
       }
     },
     _push: {

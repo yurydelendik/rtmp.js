@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-var MAX_CHUNKED_CHANNEL_BUFFER = 0x40000;
+var MAX_CHUNKED_CHANNEL_BUFFER = 0x80000;
 var RANDOM_DATA_SIZE = 1536;
 var PROTOCOL_VERSION = 3;
 
@@ -212,7 +212,7 @@ ChunkedChannel.prototype = {
     controlStream.onmessage = function (e) {
       if (e.streamId !== 0)
         return;
-      RELEASE || console.info('Control message: ' + e.typeId);
+      RELEASE || console.log('Control message: ' + e.typeId);
       switch (e.typeId) {
       case SET_CHUNK_SIZE_CONTROL_MESSAGE_ID:
         var newChunkSize = (e.data[0] << 24) | (e.data[1] << 16) |
