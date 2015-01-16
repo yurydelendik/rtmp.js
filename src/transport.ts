@@ -16,8 +16,7 @@
 
 ///<reference path='references.ts' />
 module RtmpJs {
-  import RELEASE = Shumway.RELEASE;
-  import ByteArray = Shumway.ByteArray;
+  import ByteArray = Shumway.AVM2.AS.flash.utils.ByteArray;
 
   var TRANSPORT_ENCODING = 0;
 
@@ -48,15 +47,15 @@ module RtmpJs {
           ba.writeObject(CONNECT_TRANSACTION_ID);
           ba.writeObject(properties);
           ba.writeObject(args || null);
-          RELEASE || console.log('.. Connect sent');
+          release || console.log('.. Connect sent');
           channel.send(MAIN_CHUNKED_STREAM_ID, {
             streamId: DEFAULT_STREAM_ID,
             typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-            data: new Uint8Array(ba)
+            data: new Uint8Array(<any>ba)
           });
         };
         channel.onmessage = function (message) {
-          RELEASE || console.log('.. Data received: typeId:' + message.typeId +
+          release || console.log('.. Data received: typeId:' + message.typeId +
             ', streamId:' + message.streamId +
             ', cs: ' + message.chunkedStreamId);
 
@@ -107,7 +106,7 @@ module RtmpJs {
           // TODO misc messages
         };
         channel.onusercontrolmessage = function (e) {
-          RELEASE || console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
+          release || console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
           if (e.type === PING_REQUEST_CONTROL_MESSAGE_ID) {
             channel.sendUserControlMessage(PING_RESPONSE_CONTROL_MESSAGE_ID, e.data);
           }
@@ -132,7 +131,7 @@ module RtmpJs {
         channel.send(MAIN_CHUNKED_STREAM_ID, {
           streamId: DEFAULT_STREAM_ID,
           typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-          data: new Uint8Array(ba)
+          data: new Uint8Array(<any>ba)
         });
       }
     },
@@ -156,7 +155,7 @@ module RtmpJs {
         channel.send(MAIN_CHUNKED_STREAM_ID, {
           streamId: DEFAULT_STREAM_ID,
           typeId: COMMAND_MESSAGE_AMF3_ID,
-          data: new Uint8Array(ba)
+          data: new Uint8Array(<any>ba)
         });
 
         /*     // really weird that this does not work
@@ -221,7 +220,7 @@ module RtmpJs {
           ba.writeObject(duration);
         if (arguments.length > 3)
           ba.writeObject(reset);
-        this.transport._sendCommand(this.streamId, new Uint8Array(ba));
+        this.transport._sendCommand(this.streamId, new Uint8Array(<any>ba));
         // set the buffer, otherwise it will stop in ~15 sec
         this.transport._setBuffer(this.streamId, DEFAULT_BUFFER_LENGTH);
       }

@@ -16,8 +16,6 @@
 
 ///<reference path='references.ts' />
 module RtmpJs.Browser {
-  import RELEASE = Shumway.RELEASE;
-
   var DEFAULT_RTMP_PORT = 1935;
 
   export function RtmpTransport(connectionSettings) {
@@ -54,7 +52,7 @@ module RtmpJs.Browser {
             if (writeQueue.length > 1) {
               return;
             }
-            RELEASE || console.info('Bytes written: ' + buf.length);
+            release || console.info('Bytes written: ' + buf.length);
             if (sendData(buf)) {
               writeQueue.shift();
             }
@@ -66,9 +64,9 @@ module RtmpJs.Browser {
         };
         socket.ondrain = function (e) {
           writeQueue.shift();
-          RELEASE || console.info('Write completed');
+          release || console.info('Write completed');
           while (writeQueue.length > 0) {
-            RELEASE || console.info('Bytes written: ' + writeQueue[0].length);
+            release || console.info('Bytes written: ' + writeQueue[0].length);
             if (!sendData(writeQueue[0])) {
               break;
             }
@@ -83,7 +81,7 @@ module RtmpJs.Browser {
           console.error('socket error: ' + e.data);
         };
         socket.ondata = function (e) {
-          RELEASE || console.info('Bytes read: ' + e.data.byteLength);
+          release || console.info('Bytes read: ' + e.data.byteLength);
           channel.push(new Uint8Array(e.data));
         };
       }
@@ -138,7 +136,7 @@ module RtmpJs.Browser {
       value: function (properties) {
         var channel = this.initChannel(properties);
         channel.ondata = function (data) {
-          RELEASE || console.info('Bytes written: ' + data.length);
+          release || console.info('Bytes written: ' + data.length);
           this.data.push(new Uint8Array(data));
         }.bind(this);
         channel.onclose = function () {

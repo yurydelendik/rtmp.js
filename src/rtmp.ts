@@ -16,8 +16,6 @@
 
 ///<reference path='references.ts' />
 module RtmpJs {
-  import RELEASE = Shumway.RELEASE;
-
   var MAX_CHUNKED_CHANNEL_BUFFER = 0x80000;
   var RANDOM_DATA_SIZE = 1536;
   var PROTOCOL_VERSION = 3;
@@ -216,7 +214,7 @@ module RtmpJs {
       controlStream.onmessage = function (e) {
         if (e.streamId !== 0)
           return;
-        RELEASE || console.log('Control message: ' + e.typeId);
+        release || console.log('Control message: ' + e.typeId);
         switch (e.typeId) {
           case SET_CHUNK_SIZE_CONTROL_MESSAGE_ID:
             var newChunkSize = (e.data[0] << 24) | (e.data[1] << 16) |
@@ -528,7 +526,7 @@ module RtmpJs {
       if (this.bufferLength < totalChunkHeaderSize + read)
         return;
 
-      RELEASE || (!firstChunk && tailLength) || // limiting trace to first/last chunks
+      release || (!firstChunk && tailLength) || // limiting trace to first/last chunks
       console.log('Chunk received: cs:' + chunkStreamId + '; ' +
         'f/l:' + firstChunk + '/' + (!tailLength) + ';  len:' + messageLength);
       chunkStream.lastTimestamp = chunkTimestamp;

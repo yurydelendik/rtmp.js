@@ -14,34 +14,71 @@
  * limitations under the License.
  */
 
-
 // parts and shims of the Mozilla Shumway project to run amf.js logic
 
 ///<reference path='references.ts' />
-module Shumway {
-  export var RELEASE = false;
 
+/** @const */ var release: boolean = false;
+
+// TODO no way around it, we need to refactor amf.js to make it easier
+Object.defineProperty(Object.prototype, 'asSetPublicProperty', {
+  value: function (name, value) {
+    this[name] = value;
+  }
+});
+
+module Shumway {
   export function isNumeric(a) {
     return +a == a;
   }
+}
 
-  export function setProperty(obj, name, value) {
-    obj[name] = value;
+module Shumway.AVM2.Runtime {
+  export function construct(cls, args): any {
+    return {};
   }
 
-  export function forEachPublicProperty(obj, fn, thisArg) {
+  export function forEachPublicProperty(obj, fn, thisArg = null) {
     for (var i in obj) {
       fn.call(thisArg, i, obj[i]);
     }
   }
+}
 
+module Shumway.AVM2.ABC {
   export var Multiname = {
-    fromSimpleName: function (name) {
+    getQualifiedName: function (name) {
+      return name;
+    },
+    getPublicQualifiedName: function (name) {
       return name;
     }
   };
+}
 
-  export function ByteArray(a?): void {
+module Shumway.AVM2.AS.flash.net {
+  export class ObjectEncoding {
+    public static AMF0 = 0;
+    public static AMF3 = 3;
+    public static DEFAULT = ObjectEncoding.AMF3;
+  }
+}
+
+module Shumway.AVM2.AS.flash.utils {
+  export class ByteArray {
+    constructor(a?) {
+      return <any>buildByteArray(a);
+    }
+    public length: number;
+    public position: number;
+    public objectEncoding: number;
+    public readByte: () => number;
+    public writeByte: (v: number) => void;
+    public readObject: () => any;
+    public writeObject: (obj: any) => void;
+  }
+
+  function buildByteArray(a?) {
     var result: any = [];
     if (a) {
       for (var i = 0; i < a.length; i++) result[i] = a[i];
@@ -59,18 +96,34 @@ module Shumway {
       }
       },
       readObject: { value: function () {
-        return AMFUtils[this.objectEncoding].read(this);
+        switch (this.objectEncoding) {
+          case flash.net.ObjectEncoding.AMF0:
+            return AMF0.read(this);
+          case flash.net.ObjectEncoding.AMF3:
+            return AMF3.read(this);
+          default:
+            throw new Error("Object Encoding");
+        }
       }
       },
-      writeObject: { value: function (v) {
-        AMFUtils[this.objectEncoding].write(this, v);
+      writeObject: { value: function (object) {
+        switch (this.objectEncoding) {
+          case flash.net.ObjectEncoding.AMF0:
+            return AMF0.write(this, object);
+          case flash.net.ObjectEncoding.AMF3:
+            return AMF3.write(this, object);
+          default:
+            throw new Error("Object Encoding");
+        }
       }
       }
     });
     return result;
   }
+}
 
-  export function utf8decode(str) {
+module Shumway.StringUtilities {
+  export function utf8decode(str: string) {
     var bytes = new Uint8Array(str.length * 4);
     var b = 0;
     for (var i = 0, j = str.length; i < j; i++) {
@@ -112,7 +165,7 @@ module Shumway {
     return bytes.subarray(0, b);
   }
 
-  export function utf8encode(bytes) {
+  export function utf8encode(bytes): string {
     var j = 0, str = "";
     while (j < bytes.length) {
       var b1 = bytes[j++] & 0xFF;
@@ -149,57 +202,5 @@ module Shumway {
       }
     }
     return str;
-  }
-
-// https://gist.github.com/958841
-  function base64ArrayBuffer(arrayBuffer) {
-    var base64 = '';
-    var encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-    var bytes = new Uint8Array(arrayBuffer);
-    var byteLength = bytes.byteLength;
-    var byteRemainder = byteLength % 3;
-    var mainLength = byteLength - byteRemainder;
-
-    var a, b, c, d;
-    var chunk;
-
-    // Main loop deals with bytes in chunks of 3
-    for (var i = 0; i < mainLength; i = i + 3) {
-      // Combine the three bytes into a single integer
-      chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-
-      // Use bitmasks to extract 6-bit segments from the triplet
-      a = (chunk & 16515072) >> 18; // 16515072 = (2^6 - 1) << 18
-      b = (chunk & 258048) >> 12; // 258048 = (2^6 - 1) << 12
-      c = (chunk & 4032) >> 6; // 4032 = (2^6 - 1) << 6
-      d = chunk & 63; // 63 = 2^6 - 1
-
-      // Convert the raw binary segments to the appropriate ASCII encoding
-      base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d];
-    }
-
-    // Deal with the remaining bytes and padding
-    if (byteRemainder == 1) {
-      chunk = bytes[mainLength];
-
-      a = (chunk & 252) >> 2; // 252 = (2^6 - 1) << 2
-
-      // Set the 4 least significant bits to zero
-      b = (chunk & 3) << 4; // 3 = 2^2 - 1
-
-      base64 += encodings[a] + encodings[b] + '==';
-    } else if (byteRemainder == 2) {
-      chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1];
-
-      a = (chunk & 64512) >> 10; // 64512 = (2^6 - 1) << 10
-      b = (chunk & 1008) >> 4; // 1008 = (2^6 - 1) << 4
-
-      // Set the 2 least significant bits to zero
-      c = (chunk & 15) << 2; // 15 = 2^4 - 1
-
-      base64 += encodings[a] + encodings[b] + encodings[c] + '=';
-    }
-    return base64;
   }
 }

@@ -17,8 +17,6 @@
 
 ///<reference path='references.ts' />
 module RtmpJs.Node {
-  import RELEASE = Shumway.RELEASE;
-
   declare function require(name: string): any;
   declare var Buffer;
 
@@ -49,7 +47,7 @@ module RtmpJs.Node {
             return;
           }
           var buf = writeQueue.shift();
-          RELEASE || console.info('Bytes written: ' + buf.length);
+          release || console.info('Bytes written: ' + buf.length);
           writeAllowed = false;
           client.write(buf, 'hex', function () {
             writeAllowed = true;
@@ -71,7 +69,7 @@ module RtmpJs.Node {
           });
         client.setNoDelay();
         client.on('data', function (data) {
-          RELEASE || console.info('Bytes read: ' + (data.length >> 1));
+          release || console.info('Bytes read: ' + (data.length >> 1));
           var buf = new Buffer(data, 'hex');
           channel.push(buf);
         });
@@ -137,7 +135,7 @@ module RtmpJs.Node {
       value: function (properties) {
         var channel = this.initChannel(properties);
         channel.ondata = function (data) {
-          RELEASE || console.info('Bytes written: ' + data.length);
+          release || console.info('Bytes written: ' + data.length);
           this.data.push(Array.prototype.slice.call(data, 0));
         }.bind(this);
         channel.onclose = function () {

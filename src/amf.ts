@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Mozilla Foundation
+ * Copyright 2014 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,28 +14,31 @@
  * limitations under the License.
  */
 
+module Shumway.AVM2 {
+  import Multiname = Shumway.AVM2.ABC.Multiname;
+  import ByteArray = Shumway.AVM2.AS.flash.utils.ByteArray;
+  import forEachPublicProperty = Shumway.AVM2.Runtime.forEachPublicProperty;
+  import construct = Shumway.AVM2.Runtime.construct;
 
-// part of the Mozilla Shumway project
+  export enum AMF0Marker {
+    NUMBER = 0x00,
+    BOOLEAN = 0x01,
+    STRING = 0x02,
+    OBJECT = 0x03,
+    NULL = 0x05,
+    UNDEFINED = 0x06,
+    REFERENCE = 0x07,
+    ECMA_ARRAY = 0x08,
+    OBJECT_END = 0x09,
+    STRICT_ARRAY = 0x0A,
+    DATE = 0x0B,
+    LONG_STRING = 0x0C,
+    XML = 0x0F,
+    TYPED_OBJECT = 0x10,
+    AVMPLUS = 0x11
+  }
 
-///<reference path='references.ts' />
-module Shumway {
-  var AMF0_NUMBER_MARKER = 0x00;
-  var AMF0_BOOLEAN_MARKER = 0x01;
-  var AMF0_STRING_MARKER = 0x02;
-  var AMF0_OBJECT_MARKER = 0x03;
-  var AMF0_NULL_MARKER = 0x05;
-  var AMF0_UNDEFINED_MARKER = 0x06;
-  var AMF0_REFERENCE_MARKER = 0x07;
-  var AMF0_ECMA_ARRAY_MARKER = 0x08;
-  var AMF0_OBJECT_END_MARKER = 0x09;
-  var AMF0_STRICT_ARRAY_MARKER = 0x0A;
-  var AMF0_DATE_MARKER = 0x0B;
-  var AMF0_LONG_STRING_MARKER = 0x0C;
-  var AMF0_XML_MARKER = 0x0F;
-  var AMF0_TYPED_OBJECT_MARKER = 0x10;
-  var AMF0_AVMPLUS_MARKER = 0x11;
-
-  function writeString(ba, s) {
+  function writeString(ba: ByteArray, s) {
     if (s.length > 0xFFFF) {
       throw 'AMF short string exceeded';
     }
@@ -44,7 +47,7 @@ module Shumway {
       ba.writeByte(0x00);
       return;
     }
-    var bytes = utf8decode(s);
+    var bytes = Shumway.StringUtilities.utf8decode(s);
     ba.writeByte((bytes.length >> 8) & 255);
     ba.writeByte(bytes.length & 255);
     for (var i = 0; i < bytes.length; i++) {
@@ -52,7 +55,7 @@ module Shumway {
     }
   }
 
-  function readString(ba) {
+  function readString(ba: ByteArray) {
     var byteLength = (ba.readByte() << 8) | ba.readByte();
     if (!byteLength) {
       return '';
@@ -63,10 +66,10 @@ module Shumway {
       buffer[i] = ba.readByte();
     }
 
-    return utf8encode(buffer);
+    return Shumway.StringUtilities.utf8encode(buffer);
   }
 
-  function writeDouble(ba, value) {
+  function writeDouble(ba: ByteArray, value) {
     var buffer = new ArrayBuffer(8);
     var view = new DataView(buffer);
     view.setFloat64(0, value, false);
@@ -75,7 +78,7 @@ module Shumway {
     }
   }
 
-  function readDouble(ba) {
+  function readDouble(ba: ByteArray) {
     var buffer = new ArrayBuffer(8);
     var view = new DataView(buffer);
     for (var i = 0; i < buffer.byteLength; i++) {
@@ -85,130 +88,132 @@ module Shumway {
   }
 
   function setAvmProperty(obj, propertyName, value) {
-    setProperty(obj, isNumeric(propertyName) ? propertyName :
-      Multiname.fromSimpleName(propertyName), value);
+    obj.asSetPublicProperty(propertyName, value);
   }
 
-  var amf0 = {
-    write: function (ba, obj) {
+  export class AMF0 {
+    public static write(ba: ByteArray, obj) {
       switch (typeof obj) {
-      case 'boolean':
-        ba.writeByte(AMF0_BOOLEAN_MARKER);
-        ba.writeByte(obj ? 0x01: 0x00);
-        break;
-      case 'number':
-        ba.writeByte(AMF0_NUMBER_MARKER);
-        writeDouble(ba, obj);
-        break;
-      case 'undefined':
-        ba.writeByte(AMF0_UNDEFINED_MARKER);
-        break;
-      case 'string':
-        ba.writeByte(AMF0_STRING_MARKER);
-        writeString(ba, obj);
-        break;
-      case 'object':
-        if (obj === null) {
-          ba.writeByte(AMF0_NULL_MARKER);
-        } else if (Array.isArray(obj)) {
-          ba.writeByte(AMF0_ECMA_ARRAY_MARKER);
-          ba.writeByte((obj.length >>> 24) & 255);
-          ba.writeByte((obj.length >> 16) & 255);
-          ba.writeByte((obj.length >> 8) & 255);
-          ba.writeByte(obj.length & 255);
-          forEachPublicProperty(obj, function (key, value) {
-            writeString(ba, key);
-            this.write(ba, value);
-          }, this);
-          ba.writeByte(0x00);
-          ba.writeByte(0x00);
-          ba.writeByte(AMF0_OBJECT_END_MARKER);
-        } else {
-          ba.writeByte(AMF0_OBJECT_MARKER);
-          forEachPublicProperty(obj, function (key, value) {
-            writeString(ba, key);
-            this.write(ba, value);
-          }, this);
-          ba.writeByte(0x00);
-          ba.writeByte(0x00);
-          ba.writeByte(AMF0_OBJECT_END_MARKER);
-        }
-        return;
-      }
-    },
-    read: function (ba) {
-      var marker = ba.readByte();
-      switch (marker) {
-      case AMF0_NUMBER_MARKER:
-        return readDouble(ba);
-      case AMF0_BOOLEAN_MARKER:
-        return !!ba.readByte();
-      case AMF0_STRING_MARKER:
-        return readString(ba);
-      case AMF0_OBJECT_MARKER:
-        var obj = {};
-        while (true) {
-          var key = readString(ba);
-          if (!key.length) break;
-          setAvmProperty(obj, key, this.read(ba));
-        }
-        if (ba.readByte() !== AMF0_OBJECT_END_MARKER) {
-          throw 'AMF0 End marker is not found';
-        }
-        return obj;
-      case AMF0_NULL_MARKER:
-        return null;
-      case AMF0_UNDEFINED_MARKER:
-        return undefined;
-      case AMF0_ECMA_ARRAY_MARKER:
-        var arr = [];
-        arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
-                     (ba.readByte() << 8) | ba.readByte();
-        while (true) {
-          var key = readString(ba);
-          if (!key.length) break;
-          setAvmProperty(arr, key, this.read(ba));
-        }
-        if (ba.readByte() !== AMF0_OBJECT_END_MARKER) {
-          throw 'AMF0 End marker is not found';
-        }
-        return arr;
-      case AMF0_STRICT_ARRAY_MARKER:
-        var arr = [];
-        arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
-                     (ba.readByte() << 8) | ba.readByte();
-        for (var i = 0; i < arr.length; i++) {
-          arr[i] = this.read(ba);
-        }
-        return arr;
-      case AMF0_AVMPLUS_MARKER:
-        return readAmf3Data(ba, {});
-      default:
-        throw 'AMF0 Unknown marker ' + marker; 
+        case 'boolean':
+          ba.writeByte(AMF0Marker.BOOLEAN);
+          ba.writeByte(obj ? 0x01: 0x00);
+          break;
+        case 'number':
+          ba.writeByte(AMF0Marker.NUMBER);
+          writeDouble(ba, obj);
+          break;
+        case 'undefined':
+          ba.writeByte(AMF0Marker.UNDEFINED);
+          break;
+        case 'string':
+          ba.writeByte(AMF0Marker.STRING);
+          writeString(ba, obj);
+          break;
+        case 'object':
+          if (obj === null) {
+            ba.writeByte(AMF0Marker.NULL);
+          } else if (Array.isArray(obj)) {
+            ba.writeByte(AMF0Marker.ECMA_ARRAY);
+            ba.writeByte((obj.length >>> 24) & 255);
+            ba.writeByte((obj.length >> 16) & 255);
+            ba.writeByte((obj.length >> 8) & 255);
+            ba.writeByte(obj.length & 255);
+            forEachPublicProperty(obj, function (key, value) {
+              writeString(ba, key);
+              this.write(ba, value);
+            }, this);
+            ba.writeByte(0x00);
+            ba.writeByte(0x00);
+            ba.writeByte(AMF0Marker.OBJECT_END);
+          } else {
+            ba.writeByte(AMF0Marker.OBJECT);
+            forEachPublicProperty(obj, function (key, value) {
+              writeString(ba, key);
+              this.write(ba, value);
+            }, this);
+            ba.writeByte(0x00);
+            ba.writeByte(0x00);
+            ba.writeByte(AMF0Marker.OBJECT_END);
+          }
+          return;
       }
     }
-  };
 
-  var AMF3_UNDEFINED_MARKER = 0x00;
-  var AMF3_NULL_MARKER = 0x01;
-  var AMF3_FALSE_MARKER = 0x02;
-  var AMF3_TRUE_MARKER = 0x03;
-  var AMF3_INTEGER_MARKER = 0x04;
-  var AMF3_DOUBLE_MARKER = 0x05;
-  var AMF3_STRING_MARKER = 0x06;
-  var AMF3_XML_DOC_MARKER = 0x07;
-  var AMF3_DATE_MARKER = 0x08;
-  var AMF3_ARRAY_MARKER = 0x09;
-  var AMF3_OBJECT_MARKER = 0x0A;
-  var AMF3_XML_MARKER = 0x0B;
-  var AMF3_BYTEARRAY_MARKER = 0x0C;
-  var AMF3_VECTOR_INT_MARKER = 0x0D;
-  var AMF3_VECTOR_UINT_MARKER = 0x0E;
-  var AMF3_VECTOR_DOUBLE_MARKER = 0x0F;
-  var AMF3_VECTOR_OBJECT_MARKER = 0x10;
-  var AMF3_DICTIONARY_MARKER = 0x11;
+    public static read(ba: ByteArray) {
+      var marker = ba.readByte();
+      switch (marker) {
+        case AMF0Marker.NUMBER:
+          return readDouble(ba);
+        case AMF0Marker.BOOLEAN:
+          return !!ba.readByte();
+        case AMF0Marker.STRING:
+          return readString(ba);
+        case AMF0Marker.OBJECT:
+          var obj = {};
+          while (true) {
+            var key = readString(ba);
+            if (!key.length) break;
+            setAvmProperty(obj, key, this.read(ba));
+          }
+          if (ba.readByte() !== AMF0Marker.OBJECT_END) {
+            throw 'AMF0 End marker is not found';
+          }
+          return obj;
+        case AMF0Marker.NULL:
+          return null;
+        case AMF0Marker.UNDEFINED:
+          return undefined;
+        case AMF0Marker.ECMA_ARRAY:
+          var arr = [];
+          arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
+            (ba.readByte() << 8) | ba.readByte();
+          while (true) {
+            var key = readString(ba);
+            if (!key.length) break;
+            setAvmProperty(arr, key, this.read(ba));
+          }
+          if (ba.readByte() !== AMF0Marker.OBJECT_END) {
+            throw 'AMF0 End marker is not found';
+          }
+          return arr;
+        case AMF0Marker.STRICT_ARRAY:
+          var arr = [];
+          arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
+            (ba.readByte() << 8) | ba.readByte();
+          for (var i = 0; i < arr.length; i++) {
+            arr[i] = this.read(ba);
+          }
+          return arr;
+        case AMF0Marker.AVMPLUS:
+          return readAmf3Data(ba, {});
+        default:
+          throw 'AMF0 Unknown marker ' + marker;
+      }
+    }
+  }
 
-  function readU29(ba) {
+  export enum AMF3Marker {
+    UNDEFINED = 0x00,
+    NULL = 0x01,
+    FALSE = 0x02,
+    TRUE = 0x03,
+    INTEGER = 0x04,
+    DOUBLE = 0x05,
+    STRING = 0x06,
+    XML_DOC = 0x07,
+    DATE = 0x08,
+    ARRAY = 0x09,
+    OBJECT = 0x0A,
+    XML = 0x0B,
+    BYTEARRAY = 0x0C,
+    VECTOR_INT = 0x0D,
+    VECTOR_UINT = 0x0E,
+    VECTOR_DOUBLE = 0x0F,
+    VECTOR_OBJECT = 0x10,
+    DICTIONARY = 0x11
+  }
+
+  function readU29(ba: ByteArray) {
     var b1 = ba.readByte();
     if ((b1 & 0x80) === 0) {
       return b1;
@@ -225,7 +230,7 @@ module Shumway {
     return ((b1 & 0x7F) << 22) | ((b2 & 0x7F) << 15) | ((b3 & 0x7F) << 8) | b4;
   }
 
-  function writeU29(ba, value) {
+  function writeU29(ba: ByteArray, value) {
     if ((value & 0xFFFFFF80) === 0) {
       ba.writeByte(value & 0x7F);
     } else if ((value & 0xFFFFC000) === 0) {
@@ -245,7 +250,7 @@ module Shumway {
     }
   }
 
-  function readUTF8vr(ba, caches) {
+  function readUTF8vr(ba: ByteArray, caches) {
     var u29s = readU29(ba);
     if (u29s === 0x01) {
       return '';
@@ -260,12 +265,12 @@ module Shumway {
     for (var i = 0; i < byteLength; i++) {
       buffer[i] = ba.readByte();
     }
-    var value = utf8encode(buffer);
+    var value = Shumway.StringUtilities.utf8encode(buffer);
     stringsCache.push(value);
     return value;
   }
 
-  function writeUTF8vr(ba, value, caches) {
+  function writeUTF8vr(ba: ByteArray, value, caches) {
     if (value === '') {
       ba.writeByte(0x01); // empty string
       return;
@@ -279,89 +284,108 @@ module Shumway {
     }
     stringsCache.push(value);
 
-    var bytes = utf8decode(value);
+    var bytes = Shumway.StringUtilities.utf8decode(value);
     writeU29(ba, 1 | (bytes.length << 1));
     for (var i = 0; i < bytes.length; i++) {
       ba.writeByte(bytes[i]);
     }
   }
 
-  function readAmf3Data(ba, caches) {
+  function readAmf3Data(ba: ByteArray, caches) {
     var marker = ba.readByte();
     switch (marker) {
-    case AMF3_NULL_MARKER:
-      return null;
-    case AMF3_UNDEFINED_MARKER:
-      return undefined;
-    case AMF3_FALSE_MARKER:
-      return false;
-    case AMF3_TRUE_MARKER:
-      return true;
-    case AMF3_INTEGER_MARKER:
-      return readU29(ba);
-    case AMF3_DOUBLE_MARKER:
-      return readDouble(ba);
-    case AMF3_STRING_MARKER:
-      return readUTF8vr(ba, caches);
-    case AMF3_DATE_MARKER:
-      return new Date(readDouble(ba));
-    case AMF3_OBJECT_MARKER:
-      var u29o = readU29(ba);
-      if ((u29o & 1) === 0) {
-        return caches.objectsCache[u29o >> 1];
-      }
-      if ((u29o & 4) !== 0) {
-        throw 'AMF3 Traits-Ext is not supported';
-      }
-      var traits;
-      if ((u29o & 2) === 0) {
-        traits = caches.traitsCache[u29o >> 2];
-      } else {
-        traits = Object.create(null);
-        traits.className = readUTF8vr(ba, caches);
-        traits.members = [];
-        for (var i = 0, j = u29o >> 4; i < j; i++) {
-          traits.members.push(readUTF8vr(ba, caches));
+      case AMF3Marker.NULL:
+        return null;
+      case AMF3Marker.UNDEFINED:
+        return undefined;
+      case AMF3Marker.FALSE:
+        return false;
+      case AMF3Marker.TRUE:
+        return true;
+      case AMF3Marker.INTEGER:
+        return readU29(ba);
+      case AMF3Marker.DOUBLE:
+        return readDouble(ba);
+      case AMF3Marker.STRING:
+        return readUTF8vr(ba, caches);
+      case AMF3Marker.DATE:
+        return new Date(readDouble(ba));
+      case AMF3Marker.OBJECT:
+        var u29o = readU29(ba);
+        if ((u29o & 1) === 0) {
+          return caches.objectsCache[u29o >> 1];
         }
-        (caches.traitsCache || (caches.traitsCache = [])).push(traits);
-      }
-      
-      var obj = {};
-      for (var i = 0; i < traits.members.length; i++) {
-        var value = readAmf3Data(ba, caches);
-        setAvmProperty(obj, traits.members[i], value);
-      }
-      while (true) {
-        var key = readUTF8vr(ba, caches);
-        if (!key.length) break;
-        var value = readAmf3Data(ba, caches);
-        setAvmProperty(obj, key, value);
-      }
-      return obj;
-    case AMF3_ARRAY_MARKER:
-      var u29o = readU29(ba);
-      if ((u29o & 1) === 0) {
-        return caches.objectsCache[u29o >> 1];
-      }
-      var arr = [];
-      var densePortionLength = u29o >> 1;
-      while (true) {
-        var key = readUTF8vr(ba, caches);
-        if (!key.length) break;        
-        var value = readAmf3Data(ba, caches);
-        setAvmProperty(arr, key, value);
-      }
-      for (var i = 0; i < densePortionLength; i++) {
-        var value = readAmf3Data(ba, caches);
-        setAvmProperty(arr, i, value);
-      }
-      return arr;
-    default:
-      throw 'AMF3 Unknown marker ' + marker; 
+        if ((u29o & 4) !== 0) {
+          throw 'AMF3 Traits-Ext is not supported';
+        }
+        var traits, objectClass;
+        if ((u29o & 2) === 0) {
+          traits = caches.traitsCache[u29o >> 2];
+          objectClass = traits.class;
+        } else {
+          traits = {};
+          var aliasName = readUTF8vr(ba, caches);
+          traits.className = aliasName;
+          objectClass = aliasName && aliasesCache.names[aliasName];
+          traits.class = objectClass;
+          traits.isDynamic = (u29o & 8) !== 0;
+          traits.members = [];
+          var slots = objectClass && objectClass.instanceBindings.slots;
+          for (var i = 0, j = u29o >> 4; i < j; i++) {
+            var traitName = readUTF8vr(ba, caches);
+            var slot = null;
+            for (var j = 1; slots && j < slots.length; j++) {
+              if (slots[j].name.name === traitName) {
+                slot = slots[j];
+                break;
+              }
+            }
+            traits.members.push(slot ? Multiname.getQualifiedName(slot.name) :
+              Multiname.getPublicQualifiedName(traitName));
+          }
+          (caches.traitsCache || (caches.traitsCache = [])).push(traits);
+        }
+
+        var obj = objectClass ? construct(objectClass, []) : {};
+        (caches.objectsCache || (caches.objectsCache = [])).push(obj);
+        for (var i = 0; i < traits.members.length; i++) {
+          var value = readAmf3Data(ba, caches);
+          obj[traits.members[i]] = value;
+        }
+        if (traits.isDynamic) {
+          while (true) {
+            var key = readUTF8vr(ba, caches);
+            if (!key.length) break;
+            var value = readAmf3Data(ba, caches);
+            setAvmProperty(obj, key, value);
+          }
+        }
+        return obj;
+      case AMF3Marker.ARRAY:
+        var u29o = readU29(ba);
+        if ((u29o & 1) === 0) {
+          return caches.objectsCache[u29o >> 1];
+        }
+        var arr = [];
+        (caches.objectsCache || (caches.objectsCache = [])).push(arr);
+        var densePortionLength = u29o >> 1;
+        while (true) {
+          var key = readUTF8vr(ba, caches);
+          if (!key.length) break;
+          var value = readAmf3Data(ba, caches);
+          setAvmProperty(arr, key, value);
+        }
+        for (var i = 0; i < densePortionLength; i++) {
+          var value = readAmf3Data(ba, caches);
+          setAvmProperty(arr, i, value);
+        }
+        return arr;
+      default:
+        throw 'AMF3 Unknown marker ' + marker;
     }
   }
 
-  function writeCachedReference(ba, obj, caches) {
+  function writeCachedReference(ba: ByteArray, obj, caches) {
     var objectsCache = caches.objectsCache || (caches.objectsCache = []);
     var index = objectsCache.indexOf(obj);
     if (index < 0) {
@@ -372,82 +396,133 @@ module Shumway {
     return true;
   }
 
-  function writeAmf3Data(ba, obj, caches) {
+  function writeAmf3Data(ba: ByteArray, obj, caches) {
     switch (typeof obj) {
-    case 'boolean':
-      ba.writeByte(obj ? AMF3_TRUE_MARKER : AMF3_FALSE_MARKER);
-      break;
-    case 'number':
-      if (obj === (obj | 0)) {
-        ba.writeByte(AMF3_INTEGER_MARKER);
-        writeU29(ba, obj);
-      } else {
-        ba.writeByte(AMF3_DOUBLE_MARKER);
-        writeDouble(ba, obj);
-      }
-      break;
-    case 'undefined':
-      ba.writeByte(AMF3_UNDEFINED_MARKER);
-      break;
-    case 'string':
-      ba.writeByte(AMF3_STRING_MARKER);
-      writeUTF8vr(ba, obj, caches);
-      break;
-    case 'object':
-      if (obj === null) {
-        ba.writeByte(AMF3_NULL_MARKER);
-      } else if (Array.isArray(obj)) {
-        ba.writeByte(AMF3_ARRAY_MARKER);
-        if (writeCachedReference(ba, obj, caches))
-          break;
-        var densePortionLength = 0;
-        while (densePortionLength in obj) {
-          ++densePortionLength;
+      case 'boolean':
+        ba.writeByte(obj ? AMF3Marker.TRUE : AMF3Marker.FALSE);
+        break;
+      case 'number':
+        if (obj === (obj | 0)) {
+          ba.writeByte(AMF3Marker.INTEGER);
+          writeU29(ba, obj);
+        } else {
+          ba.writeByte(AMF3Marker.DOUBLE);
+          writeDouble(ba, obj);
         }
-        writeU29(ba, (densePortionLength << 1) | 1);
-        forEachPublicProperty(obj, function (i, value) {
-          if (isNumeric(i) && i >= 0 && i < densePortionLength) {
-            return;
+        break;
+      case 'undefined':
+        ba.writeByte(AMF3Marker.UNDEFINED);
+        break;
+      case 'string':
+        ba.writeByte(AMF3Marker.STRING);
+        writeUTF8vr(ba, obj, caches);
+        break;
+      case 'object':
+        if (obj === null) {
+          ba.writeByte(AMF3Marker.NULL);
+        } else if (Array.isArray(obj)) {
+          ba.writeByte(AMF3Marker.ARRAY);
+          if (writeCachedReference(ba, obj, caches))
+            break;
+          var densePortionLength = 0;
+          while (densePortionLength in obj) {
+            ++densePortionLength;
           }
-          writeUTF8vr(ba, i, caches);
-          writeAmf3Data(ba, value, caches);
-        }, null);
-        writeUTF8vr(ba, '', caches);
-        for (var j = 0; j < densePortionLength; j++) {
-          writeAmf3Data(ba, obj[j], caches);
+          writeU29(ba, (densePortionLength << 1) | 1);
+          forEachPublicProperty(obj, function (i, value) {
+            if (isNumeric(i) && i >= 0 && i < densePortionLength) {
+              return;
+            }
+            writeUTF8vr(ba, i, caches);
+            writeAmf3Data(ba, value, caches);
+          });
+          writeUTF8vr(ba, '', caches);
+          for (var j = 0; j < densePortionLength; j++) {
+            writeAmf3Data(ba, obj[j], caches);
+          }
+        } else if (obj instanceof Date) {
+          ba.writeByte(AMF3Marker.DATE);
+          if (writeCachedReference(ba, obj, caches))
+            break;
+          writeU29(ba, 1);
+          writeDouble(ba, obj.valueOf());
+        } else {
+          // TODO Vector, Dictionary, ByteArray and XML support
+          ba.writeByte(AMF3Marker.OBJECT);
+          if (writeCachedReference(ba, obj, caches))
+            break;
+
+          var isDynamic = true;
+
+          var objectClass = obj.class;
+          if (objectClass) {
+            isDynamic = !objectClass.classInfo.instanceInfo.isSealed();
+
+            var aliasName = aliasesCache.classes.get(objectClass) || '';
+
+            var traits, traitsCount;
+            var traitsCache = caches.traitsCache || (caches.traitsCache = []);
+            var traitsInfos = caches.traitsInfos || (caches.traitsInfos = []);
+            var traitsRef = traitsCache.indexOf(objectClass);
+            if (traitsRef < 0) {
+              var slots = objectClass.instanceBindings.slots;
+              traits = [];
+              var traitsNames = [];
+              for (var i = 1; i < slots.length; i++) {
+                var slot = slots[i];
+                if (!slot.name.getNamespace().isPublic()) {
+                  continue;
+                }
+                traits.push(Multiname.getQualifiedName(slot.name));
+                traitsNames.push(slot.name.name);
+              }
+              traitsCache.push(objectClass);
+              traitsInfos.push(traits);
+              traitsCount = traitsNames.length;
+              writeU29(ba, (isDynamic ? 0x0B : 0x03) + (traitsCount << 4));
+              writeUTF8vr(ba, aliasName, caches);
+              for (var i = 0; i < traitsCount; i++) {
+                writeUTF8vr(ba, traitsNames[i], caches);
+              }
+            } else {
+              traits = traitsInfos[traitsRef];
+              traitsCount = traits.length;
+              writeU29(ba, 0x01 + (traitsRef << 2));
+            }
+
+            for (var i = 0; i < traitsCount; i++) {
+              writeAmf3Data(ba, obj[traits[i]], caches);
+            }
+          } else {
+            // object with no class definition
+            writeU29(ba, 0x0B);
+            writeUTF8vr(ba, '', caches); // empty alias name
+          }
+
+          if (isDynamic) {
+            forEachPublicProperty(obj, function (i, value) {
+              writeUTF8vr(ba, i, caches);
+              writeAmf3Data(ba, value, caches);
+            });
+            writeUTF8vr(ba, '', caches);
+          }
         }
-      } else if (obj instanceof Date) {
-        ba.writeByte(AMF3_DATE_MARKER);
-        if (writeCachedReference(ba, obj, caches))
-          break;
-        writeU29(ba, 1);
-        writeDouble(ba, obj.valueOf());
-      } else {
-        // TODO Vector, Dictionary, ByteArray and XML support
-        ba.writeByte(AMF3_OBJECT_MARKER);
-        if (writeCachedReference(ba, obj, caches))
-          break;
-        // TODO better AVM2 object serialization -- using simple method for now
-        writeU29(ba, 11); // traits mode for dynamic type (xxx1011), no members
-        writeUTF8vr(ba, '', caches); // empty class name
-        forEachPublicProperty(obj, function (i, value) {
-          writeUTF8vr(ba, i, caches);
-          writeAmf3Data(ba, value, caches);
-        }, null);
-        writeUTF8vr(ba, '', caches);
-      }
-      return;
+        return;
     }
   }
 
-  var amf3 = {
-    write: function (ba, obj) {
-      writeAmf3Data(ba, obj, {});
-    },
-    read: function (ba) {
-      return readAmf3Data(ba, {});
-    }
+  // Also used in linker.ts for registering/retrieving class aliases.
+  export var aliasesCache = {
+    classes: new WeakMap(),
+    names: Object.create(null)
   };
 
-  export var AMFUtils = [amf0, null, null, amf3];
+  export class AMF3 {
+    public static write(ba: ByteArray, object) {
+      writeAmf3Data(ba, object, {});
+    }
+    public static read(ba: ByteArray) {
+      return readAmf3Data(ba, {});
+    }
+  }
 }
