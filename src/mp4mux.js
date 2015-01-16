@@ -1,3 +1,19 @@
+/**
+ * Copyright 2015 Mozilla Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 var MP4Mux = (function MP4MuxClosure() {
   function hex(s) {
     var len = s.length >> 1;
@@ -152,10 +168,11 @@ var MP4Mux = (function MP4MuxClosure() {
         this.tracks.push({
           language: "unk",
           type: "mp3",
-          timescale: metadata.audiosamplerate,
-          samplerate: metadata.audiosamplerate,
-          channels: metadata.audiochannels,
-          cache: []
+          timescale: metadata.audiosamplerate || 44100,
+          samplerate: metadata.audiosamplerate || 44100,
+          channels: metadata.audiochannels || 2,
+          cache: [],
+          cachedDuration: 0
         });
       }
       if (metadata.videocodecid) {
@@ -169,7 +186,8 @@ var MP4Mux = (function MP4MuxClosure() {
           framerate: metadata.framerate,
           width: metadata.width,
           height: metadata.height,
-          cache: []
+          cache: [],
+          cachedDuration: 0
         });
       }
     }
@@ -250,7 +268,9 @@ var MP4Mux = (function MP4MuxClosure() {
           var audioSpecificConfig = trackInfo.cache[0].data;
           codecInfo = tag('mp4a', [
             hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000'),
-            tag('esds', [hex('000000000380808022000200048080801440150000000000FA000000000005808080'), audioSpecificConfig.length, audioSpecificConfig, hex('068080800102')])
+            tag('esds', [hex('0000000003808080'), 32 + audioSpecificConfig.length, hex('00020004808080'),
+              18 + audioSpecificConfig.length, hex('40150000000000FA000000000005808080'), audioSpecificConfig.length,
+              audioSpecificConfig, hex('068080800102')])
           ]);
           isAudio = true;
           break;
