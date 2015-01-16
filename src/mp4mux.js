@@ -202,7 +202,7 @@ var MP4Mux = (function MP4MuxClosure() {
   var MAX_PACKETS_IN_CHUNK = 5;
 
   MP4Mux.prototype = {
-    pushPacket: function (type, data) {
+    pushPacket: function (type, data, timestamp) {
       if (this.state === 0 && !this.waitForAdditionalData) {
         this.generateHeader();
       }
@@ -220,7 +220,7 @@ var MP4Mux = (function MP4MuxClosure() {
             this.generateHeader();
           break;
         }
-        this.tracks[this.audioTrackId].cache.push(audioPacket);
+        this.tracks[this.audioTrackId].cache.push({packet: audioPacket, timestamp: timestamp});
         this.cachedPackets++;
         break;
       case VIDEO_PACKET:
@@ -238,7 +238,7 @@ var MP4Mux = (function MP4MuxClosure() {
           if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
             this.chunk();
         }
-        this.tracks[this.videoTrackId].cache.push(videoPacket);
+        this.tracks[this.videoTrackId].cache.push({packet: videoPacket, timestamp: timestamp});
         this.cachedPackets++;
         break;
       default:
@@ -265,7 +265,7 @@ var MP4Mux = (function MP4MuxClosure() {
         var isAudio;
         switch (trackInfo.type) {
         case 'mp4a':
-          var audioSpecificConfig = trackInfo.cache[0].data;
+          var audioSpecificConfig = trackInfo.cache[0].packet.data;
           codecInfo = tag('mp4a', [
             hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000'),
             tag('esds', [hex('0000000003808080'), 32 + audioSpecificConfig.length, hex('00020004808080'),
@@ -281,7 +281,7 @@ var MP4Mux = (function MP4MuxClosure() {
           isAudio = true;
           break;
         case 'avc1':
-          var avcC = trackInfo.cache[0].data;
+          var avcC = trackInfo.cache[0].packet.data;
           avcC[5] |= 0xE0; // !!! SPS has to have that
           codecInfo = tag('avc1', [
             hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
@@ -350,12 +350,13 @@ var MP4Mux = (function MP4MuxClosure() {
       var moofHeader = flatten([hex('000000106D66686400000000'), encodeInt32(++this.chunkIndex)]);
       var moof = [moofHeader];
       var moofLength = 8 + moofHeader.length + /* trafs len */ + 8;
-
       for (var i = 0; i < this.tracks.length; i++) {
         var trak;
         var trackInfo = this.tracks[i], trackId = i + 1;
         if (trackInfo.cache.length === 0)
           continue;
+        var currentTrackTime = (trackInfo.cache[0].timestamp * trackInfo.timescale / 1000) | 0;
+        //tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(currentTrackTime)]));
         tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(trackInfo.cachedDuration)]));
         var totalDuration = 0;
         switch (trackInfo.type) {
@@ -365,9 +366,10 @@ var MP4Mux = (function MP4MuxClosure() {
           var trun1tail = [hex('02000000')];
           var tdat1 = [];
           for (var j = 0; j < trackInfo.cache.length; j++) {
-            var audioFrameDuration = (trackInfo.cache[j].samples / trackInfo.samplerate * trackInfo.timescale) | 0;
-            tdat1.push(trackInfo.cache[j].data);
-            trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(trackInfo.cache[j].data.length));
+            var item = trackInfo.cache[j];
+            var audioFrameDuration = (item.packet.samples / trackInfo.samplerate * trackInfo.timescale) | 0;
+            tdat1.push(item.packet.data);
+            trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(item.packet.data.length));
             totalDuration += audioFrameDuration;
           }
           trun1tail = flatten(trun1tail);
@@ -380,14 +382,15 @@ var MP4Mux = (function MP4MuxClosure() {
        case 'avc1':
        case 'vp6f':
           var videoFrameDuration = (trackInfo.timescale / trackInfo.framerate) | 0;
-          var firstFrameFlags = trackInfo.cache[0].frameType !== 1 ? hex('01010000') : hex('02000000');
+          var firstFrameFlags = trackInfo.cache[0].packet.frameType !== 1 ? hex('01010000') : hex('02000000');
           var trun2head = flatten([hex('00000A05'), encodeInt32(trackInfo.cache.length)]);
           var trun2tail = [firstFrameFlags];
           var tdat2 = [];
           totalDuration = trackInfo.cache.length * videoFrameDuration;
           for (var j = 0; j < trackInfo.cache.length; j++) {
-            tdat2.push(trackInfo.cache[j].data);
-            trun2tail.push(encodeInt32(trackInfo.cache[j].data.length), encodeInt32(trackInfo.cache[j].compositionTime));
+            var item = trackInfo.cache[j];
+            tdat2.push(item.packet.data);
+            trun2tail.push(encodeInt32(item.packet.data.length), encodeInt32(item.packet.compositionTime));
           }
           trun2tail = flatten(trun2tail);
           tdat2 = flatten(tdat2);
