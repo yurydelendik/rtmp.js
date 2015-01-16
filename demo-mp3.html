@@ -29,8 +29,7 @@ limitations under the License.
     <script>
 
     var startInfo = {schema: "rtmp", host: "localhost", app: "oflaDemo", video: "awesome.mp3"};
-    //var startInfo = {schema: "rtmp", host: "test.local", app: "oflaDemo", video: "drum.mp3"};
-    //var startInfo = {schema: "rtmp", host: "test.local", app: "oflaDemo", video: "vywNKVkB.mp3"};
+
     var mp3MaxSize = 200000000;
 
     var props = {
@@ -92,7 +91,7 @@ limitations under the License.
       <tr><th>Packets: </th><td id="packets">0</td></tr>
       <tr><th>MP3 file: </th><td><button onclick="mp3.generate()">Generate</button> <a id="mp3link" download="file.mp3">Download</a></td></tr>
     </table>
-    <video id="mp3video" autoplay controls></video>
+    <audio id="mp3audio" autoplay controls></audio>
     <script>
     var mp3 = {
       packets: 0,
@@ -101,14 +100,14 @@ limitations under the License.
       init: function (metadata) {
         this.initialized = true;
       },
-      packet: function (type, data) {
+      packet: function (type, data, timestamp) {
         document.getElementById('packets').textContent = ++this.packets;
         this.file.push(new Uint8Array(data).subarray(1));
       },
       generate: function () {
-        var blob = new Blob(this.file, {type: 'application/octet-stream'});
+        var blob = new Blob(this.file, {type: 'audio/mpeg'});
         document.getElementById('mp3link').href =
-        document.getElementById('mp3video').src = URL.createObjectURL(blob);
+        document.getElementById('mp3audio').src = URL.createObjectURL(blob);
       }
     };
     </script>
