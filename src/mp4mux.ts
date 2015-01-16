@@ -141,78 +141,92 @@ module RtmpJs.MP4 {
     return result;
   }
 
-  export function MP4Mux(metadata) {
-    this.metadata = metadata;
-    this.tracks = [];
-    this.audioTrackId = -1;
-    this.videoTrackId = -1;
-    this.waitForAdditionalData = false;
-    if (metadata.trackinfo) {
-      for (var i = 0; i < metadata.trackinfo.length; i++) {
-        var info = metadata.trackinfo[i];
-        var track: any = {
-          language: info.language,
-          type: info.sampledescription[0].sampletype,
-          timescale: info.timescale,
-          cache: [],
-          cachedDuration: 0
-        };
-        if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
-          this.audioTrackId = i;
-          track.samplerate = metadata.audiosamplerate;
-          track.channels = metadata.audiochannels;
-        } else if (info.sampledescription[0].sampletype === metadata.videocodecid) {
-          this.videoTrackId = i;
-          track.framerate = metadata.videoframerate;
-          track.width = metadata.width;
-          track.height = metadata.height;
-        }
-        this.tracks.push(track);
-      }
-      this.waitForAdditionalData = true;
-    } else {
-      if (metadata.audiocodecid) {
-        if (metadata.audiocodecid !== 2)
-          throw 'unsupported audio codec: ' + metadata.audiocodec;
-        this.audioTrackId = this.tracks.length;
-        this.tracks.push({
-          language: "unk",
-          type: "mp3",
-          timescale: metadata.audiosamplerate || 44100,
-          samplerate: metadata.audiosamplerate || 44100,
-          channels: metadata.audiochannels || 2,
-          cache: [],
-          cachedDuration: 0
-        });
-      }
-      if (metadata.videocodecid) {
-        if (metadata.videocodecid !== 4)
-          throw 'unsupported video codec: ' + metadata.videocodecid;
-        this.videoTrackId = this.tracks.length;
-        this.tracks.push({
-          language: "unk",
-          type: "vp6f",
-          timescale: 10000,
-          framerate: metadata.framerate,
-          width: metadata.width,
-          height: metadata.height,
-          cache: [],
-          cachedDuration: 0
-        });
-      }
-    }
-    this.filePos = 0;
-    this.cachedPackets = 0;
-    this.state = 0;
-    this.chunkIndex = 0;
-  }
-
   var AUDIO_PACKET = 8;
   var VIDEO_PACKET = 9;
   var MAX_PACKETS_IN_CHUNK = 5;
 
-  MP4Mux.prototype = {
-    pushPacket: function (type, data, timestamp) {
+  export class MP4Mux {
+    metadata;
+    tracks: any[];
+    audioTrackId: number;
+    videoTrackId: number;
+    waitForAdditionalData: boolean;
+    filePos: number;
+    cachedPackets: number;
+    state: number;
+    chunkIndex: number;
+
+    ondata:(data) => void = function (data) {
+      throw 'not implemented';
+    };
+
+    constructor(metadata) {
+      this.metadata = metadata;
+      this.tracks = [];
+      this.audioTrackId = -1;
+      this.videoTrackId = -1;
+      this.waitForAdditionalData = false;
+      if (metadata.trackinfo) {
+        for (var i = 0; i < metadata.trackinfo.length; i++) {
+          var info = metadata.trackinfo[i];
+          var track:any = {
+            language: info.language,
+            type: info.sampledescription[0].sampletype,
+            timescale: info.timescale,
+            cache: [],
+            cachedDuration: 0
+          };
+          if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
+            this.audioTrackId = i;
+            track.samplerate = metadata.audiosamplerate;
+            track.channels = metadata.audiochannels;
+          } else if (info.sampledescription[0].sampletype === metadata.videocodecid) {
+            this.videoTrackId = i;
+            track.framerate = metadata.videoframerate;
+            track.width = metadata.width;
+            track.height = metadata.height;
+          }
+          this.tracks.push(track);
+        }
+        this.waitForAdditionalData = true;
+      } else {
+        if (metadata.audiocodecid) {
+          if (metadata.audiocodecid !== 2)
+            throw 'unsupported audio codec: ' + metadata.audiocodec;
+          this.audioTrackId = this.tracks.length;
+          this.tracks.push({
+            language: "unk",
+            type: "mp3",
+            timescale: metadata.audiosamplerate || 44100,
+            samplerate: metadata.audiosamplerate || 44100,
+            channels: metadata.audiochannels || 2,
+            cache: [],
+            cachedDuration: 0
+          });
+        }
+        if (metadata.videocodecid) {
+          if (metadata.videocodecid !== 4)
+            throw 'unsupported video codec: ' + metadata.videocodecid;
+          this.videoTrackId = this.tracks.length;
+          this.tracks.push({
+            language: "unk",
+            type: "vp6f",
+            timescale: 10000,
+            framerate: metadata.framerate,
+            width: metadata.width,
+            height: metadata.height,
+            cache: [],
+            cachedDuration: 0
+          });
+        }
+      }
+      this.filePos = 0;
+      this.cachedPackets = 0;
+      this.state = 0;
+      this.chunkIndex = 0;
+    }
+
+    pushPacket(type, data, timestamp) {
       if (this.state === 0 && !this.waitForAdditionalData) {
         this.generateHeader();
       }
@@ -258,17 +272,19 @@ module RtmpJs.MP4 {
       if (this.cachedPackets >= MAX_PACKETS_IN_CHUNK) {
         this.chunk();
       }
-    },
-    flush: function () {
+    }
+
+    flush() {
       if (this.cachedPackets > 0) {
         this.chunk();
       }
-    },
-    generateHeader: function () {
+    }
+
+    generateHeader() {
       var ftype = hex('000000206674797069736F6D0000020069736F6D69736F32617663316D703431');
 
       var metadata = this.metadata;
-      var codecInfo: any;
+      var codecInfo:any;
       var traks = [];
       for (var i = 0; i < this.tracks.length; i++) {
         var trak;
@@ -353,8 +369,9 @@ module RtmpJs.MP4 {
       this.ondata(header);
       this.filePos += header.length;
       this.state = 1;
-    },
-    chunk: function () {
+    }
+
+    chunk() {
       var moofOffset = flatten([hex('00000000'), encodeInt32(this.filePos)]); // TODO
       var trafParts = [], tdatParts = [], tfdts = [];
 
@@ -429,10 +446,7 @@ module RtmpJs.MP4 {
       this.ondata(chunk);
       this.filePos += chunk.length;
       this.cachedPackets = 0;
-    },
-    ondata: function (data) {
-      throw 'not implemented';
     }
-  };
+  }
 
 }

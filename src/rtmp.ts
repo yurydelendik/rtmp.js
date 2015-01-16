@@ -32,24 +32,42 @@ module RtmpJs {
   var MAX_CHUNK_STREAM_ID = 65599;
   var MAX_CHUNK_HEADER_SIZE = 18;
 
-  export function ChunkedStream(id) {
-    this.id = id;
-    this.lastStreamId = -1;
-    this.lastTimestamp = 0;
-    this.lastLength = 0;
-    this.lastTypeId = 0;
-    this.waitingForBytes = 0;
-    this.buffer = null;
-    this.bufferLength = 0;
+  export class ChunkedStream {
+    id: number;
+    lastStreamId: number;
+    lastTimestamp: number;
+    lastLength: number;
+    lastTypeId: number;
+    waitingForBytes: number;
+    buffer;
+    bufferLength: number;
+    lastMessageComplete: boolean;
 
-    this.sentStreamId = -1;
-    this.sentTimestamp = 0;
-    this.sentLength = 0;
-    this.sentTypeId = 0;
-  }
+    sentStreamId: number;
+    sentTimestamp: number;
+    sentLength: number;
+    sentTypeId: number;
 
-  ChunkedStream.prototype = {
-    setBuffer: function (enabled) {
+    onmessage: (message) => void = null;
+
+    constructor(id: number) {
+      this.id = id;
+      this.lastStreamId = -1;
+      this.lastTimestamp = 0;
+      this.lastLength = 0;
+      this.lastTypeId = 0;
+      this.waitingForBytes = 0;
+      this.buffer = null;
+      this.bufferLength = 0;
+      this.lastMessageComplete = false;
+
+      this.sentStreamId = -1;
+      this.sentTimestamp = 0;
+      this.sentLength = 0;
+      this.sentTypeId = 0;
+    }
+
+    setBuffer(enabled) {
       if (enabled && !this.buffer) {
         this.buffer = new Uint8Array(128);
         this.bufferLength = 0;
@@ -58,8 +76,9 @@ module RtmpJs {
         this.buffer = null;
         this.bufferLength = 0;
       }
-    },
-    abort: function () {
+    }
+
+    abort() {
       if (this.buffer) {
         this.bufferLength = 0;
       } else if (!this.lastMessageComplete) {
@@ -73,8 +92,9 @@ module RtmpJs {
           lastChunk: true
         });
       }
-    },
-    push: function (data, firstChunk, lastChunk) {
+    }
+
+    push(data, firstChunk, lastChunk) {
       if (!this.onmessage)
         return;
 
@@ -111,26 +131,48 @@ module RtmpJs {
           lastChunk: true
         });
       }
-    },
-    onmessage: null
-  };
-
-  export function ChunkedChannel() {
-    this.state = 'uninitialized';
-    this.buffer = new Uint8Array(4092);
-    this.bufferLength = 0;
-    this.chunkSize = 128;
-    this.chunkStreams = [];
-    this.peerChunkSize = 128;
-    this.peerAckWindowSize = 0;
-    this.bandwidthLimitType = 0;
-    this.windowAckSize = 0;
-    this.bytesReceived = 0;
-    this.lastAckSent = 0;
+    }
   }
 
-  ChunkedChannel.prototype = {
-    push: function (data) {
+  export class ChunkedChannel {
+    state: string;
+    buffer: Uint8Array;
+    bufferLength: number;
+    chunkSize: number;
+    chunkStreams: any[];
+    peerChunkSize: number;
+    peerAckWindowSize: number;
+    bandwidthLimitType: number;
+    windowAckSize: number;
+    bytesReceived: number;
+    lastAckSent: number;
+
+    serverVersion: number;
+    epochStart: number;
+    randomData: Uint8Array;
+
+    onusercontrolmessage: (message) => void = null;
+    onack: () => void = null;
+    ondata: (data) => void = function (data) { };
+    onclose: () => void = function () {};
+    oncreated: () => void = null;
+    onmessage: (message) => void; // TODO check if it's a mistake
+
+    constructor() {
+      this.state = 'uninitialized';
+      this.buffer = new Uint8Array(4092);
+      this.bufferLength = 0;
+      this.chunkSize = 128;
+      this.chunkStreams = [];
+      this.peerChunkSize = 128;
+      this.peerAckWindowSize = 0;
+      this.bandwidthLimitType = 0;
+      this.windowAckSize = 0;
+      this.bytesReceived = 0;
+      this.lastAckSent = 0;
+    }
+
+    push(data) {
       var newDataLength = data.length + this.bufferLength;
       if (newDataLength > this.buffer.length) {
         var newBufferLength = this.buffer.length * 2;
@@ -207,8 +249,9 @@ module RtmpJs {
         this.buffer.set(this.buffer.subarray(shiftBy, this.bufferLength), 0);
         this.bufferLength -= shiftBy;
       }
-    },
-    _initialize: function () {
+    }
+
+    private _initialize() {
       var controlStream = this._getChunkStream(CONTROL_CHUNK_STREAM_ID);
       controlStream.setBuffer(true);
       controlStream.onmessage = function (e) {
@@ -287,8 +330,9 @@ module RtmpJs {
       if (this.oncreated) {
         this.oncreated();
       }
-    },
-    setChunkSize: function (chunkSize) {
+    }
+
+    setChunkSize(chunkSize) {
       if (chunkSize < 1 || chunkSize > 0x7FFFFFFF)
         throw 'Invalid chunk size';
       this._sendMessage(CONTROL_CHUNK_STREAM_ID, {
@@ -300,14 +344,16 @@ module RtmpJs {
             chunkSize & 0xFF])
       });
       this.chunkSize = chunkSize;
-    },
-    send: function (chunkStreamId, message) {
+    }
+
+    send(chunkStreamId, message) {
       if (chunkStreamId < MIN_CHUNK_STREAM_ID ||
         chunkStreamId > MAX_CHUNK_STREAM_ID)
         throw 'Invalid chunkStreamId';
       return this._sendMessage(chunkStreamId, message);
-    },
-    sendUserControlMessage: function (type, data) {
+    }
+
+    sendUserControlMessage(type, data) {
       var eventData = new Uint8Array(2 + data.length);
       eventData[0] = (type >> 8) & 0xFF;
       eventData[1] = type & 0xFF;
@@ -318,8 +364,9 @@ module RtmpJs {
         streamId: 0,
         data: eventData
       });
-    },
-    _sendAck: function () {
+    }
+
+    private _sendAck() {
       var ackData = new Uint8Array([(this.bytesReceived >>> 24) & 0xFF,
           (this.bytesReceived >>> 16) & 0xFF,
           (this.bytesReceived >>> 8) & 0xFF,
@@ -329,8 +376,9 @@ module RtmpJs {
         streamId: 0,
         data: ackData
       });
-    },
-    _sendMessage: function (chunkStreamId, message) {
+    }
+
+    private _sendMessage(chunkStreamId, message) {
       var data = message.data;
       var messageLength = data.length;
       var chunkStream = this._getChunkStream(chunkStreamId);
@@ -434,8 +482,9 @@ module RtmpJs {
       }
 
       return timestamp;
-    },
-    _getChunkStream: function (id) {
+    }
+
+    private  _getChunkStream(id) {
       var chunkStream = this.chunkStreams[id];
       if (!chunkStream) {
         this.chunkStreams[id] = chunkStream = new ChunkedStream(id);
@@ -447,8 +496,9 @@ module RtmpJs {
         }.bind(this);
       }
       return chunkStream;
-    },
-    _parseChunkedData: function () {
+    }
+
+    private _parseChunkedData() {
       if (this.bufferLength < 1)
         return;
       var chunkType = (this.buffer[0] >> 6) & 3;
@@ -540,8 +590,9 @@ module RtmpJs {
         firstChunk, !tailLength);
 
       return totalChunkHeaderSize + read;
-    },
-    start: function () {
+    }
+
+    start() {
       this.epochStart = Date.now();
       this.ondata([PROTOCOL_VERSION]); // c0
 
@@ -555,24 +606,20 @@ module RtmpJs {
       }
       this.ondata(this.randomData); // c1
       console.log('## connected');
-    },
-    stop: function (error) {
+    }
+
+    stop(error) {
       if (error) {
         console.error('socket error!!!');
       }
       console.log('## closed');
-    },
-    fail: function (message) {
+    }
+
+    fail(message) {
       console.error('failed: ' + message);
       this.state = 'failed';
       this.onclose();
       throw new Error(message);
-    },
-    onusercontrolmessage: null,
-    onack: null,
-    ondata: function (data) {
-    },
-    onclose: function () {
     }
   }
 }

@@ -16,7 +16,7 @@
 
 // parts and shims of the Mozilla Shumway project to run amf.js logic
 
-///<reference path='references.ts' />
+var jsGlobal = (function() { return this || (1, eval)('this//# sourceURL=jsGlobal-getter'); })();
 
 /** @const */ var release: boolean = false;
 
@@ -26,6 +26,32 @@ Object.defineProperty(Object.prototype, 'asSetPublicProperty', {
     this[name] = value;
   }
 });
+
+(function polyfillWeakMap() {
+  if (typeof jsGlobal.WeakMap === 'function') {
+    return; // weak map is supported
+  }
+  var id = 0;
+  function WeakMap() {
+    this.id = '$weakmap' + (id++);
+  };
+  WeakMap.prototype = {
+    has: function(obj) {
+      return obj.hasOwnProperty(this.id);
+    },
+    get: function(obj, defaultValue) {
+      return obj.hasOwnProperty(this.id) ? obj[this.id] : defaultValue;
+    },
+    set: function(obj, value) {
+      Object.defineProperty(obj, this.id, {
+        value: value,
+        enumerable: false,
+        configurable: true
+      });
+    }
+  };
+  jsGlobal.WeakMap = WeakMap;
+})();
 
 module Shumway {
   export function isNumeric(a) {
@@ -46,14 +72,14 @@ module Shumway.AVM2.Runtime {
 }
 
 module Shumway.AVM2.ABC {
-  export var Multiname = {
-    getQualifiedName: function (name) {
-      return name;
-    },
-    getPublicQualifiedName: function (name) {
+  export class Multiname {
+    static getQualifiedName(name): string {
       return name;
     }
-  };
+    static getPublicQualifiedName(name): string {
+      return name;
+    }
+  }
 }
 
 module Shumway.AVM2.AS.flash.net {

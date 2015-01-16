@@ -17,76 +17,80 @@
 ///<reference path='references.ts' />
 module RtmpJs.Browser {
   var DEFAULT_RTMP_PORT = 1935;
+  var COMBINE_RTMPT_DATA = true;
 
-  export function RtmpTransport(connectionSettings) {
-    BaseTransport.call(this);
+  export class RtmpTransport extends BaseTransport {
+    host: string;
+    port: number;
+    ssl: boolean;
 
-    if (typeof connectionSettings === 'string') {
-      connectionSettings = {host: connectionSettings};
+    constructor(connectionSettings) {
+      super();
+
+      if (typeof connectionSettings === 'string') {
+        connectionSettings = {host: connectionSettings};
+      }
+
+      this.host = connectionSettings.host || 'localhost';
+      this.port = connectionSettings.port || DEFAULT_RTMP_PORT;
+      this.ssl = !!connectionSettings.ssl || false;
     }
 
-    this.host = connectionSettings.host || 'localhost';
-    this.port = connectionSettings.port || DEFAULT_RTMP_PORT;
-    this.ssl = connectionSettings.ssl || false;
-  }
+    connect(properties) {
+      var TCPSocket = (<any>navigator).mozTCPSocket;
+      var channel = this.initChannel(properties);
 
-  RtmpTransport.prototype = Object.create(BaseTransport.prototype, {
-    connect: {
-      value: function (properties) {
-        var TCPSocket = (<any>navigator).mozTCPSocket;
-        var channel = this.initChannel(properties);
-
-        var writeQueue = [], socketError = false;
-        var socket = TCPSocket.open(this.host, this.port,
-          { useSSL: this.ssl, binaryType: 'arraybuffer' });
+      var writeQueue = [], socketError = false;
+      var socket = TCPSocket.open(this.host, this.port,
+        { useSSL: this.ssl, binaryType: 'arraybuffer' });
 
 
-        var sendData = function (data) {
-          return socket.send(data.buffer, data.byteOffset, data.byteLength);
-        };
+      var sendData = function (data) {
+        return socket.send(data.buffer, data.byteOffset, data.byteLength);
+      };
 
-        socket.onopen = function (e) {
-          channel.ondata = function (data) {
-            var buf = new Uint8Array(data);
-            writeQueue.push(buf);
-            if (writeQueue.length > 1) {
-              return;
-            }
-            release || console.info('Bytes written: ' + buf.length);
-            if (sendData(buf)) {
-              writeQueue.shift();
-            }
-          };
-          channel.onclose = function () {
-            socket.close();
-          };
-          channel.start();
-        };
-        socket.ondrain = function (e) {
-          writeQueue.shift();
-          release || console.info('Write completed');
-          while (writeQueue.length > 0) {
-            release || console.info('Bytes written: ' + writeQueue[0].length);
-            if (!sendData(writeQueue[0])) {
-              break;
-            }
+      socket.onopen = function (e) {
+        channel.ondata = function (data) {
+          var buf = new Uint8Array(data);
+          writeQueue.push(buf);
+          if (writeQueue.length > 1) {
+            return;
+          }
+          release || console.info('Bytes written: ' + buf.length);
+          if (sendData(buf)) {
             writeQueue.shift();
           }
         };
-        socket.onclose = function (e) {
-          channel.stop(socketError);
+        channel.onclose = function () {
+          socket.close();
         };
-        socket.onerror = function (e) {
-          socketError = true;
-          console.error('socket error: ' + e.data);
-        };
-        socket.ondata = function (e) {
-          release || console.info('Bytes read: ' + e.data.byteLength);
-          channel.push(new Uint8Array(e.data));
-        };
-      }
+        channel.start();
+      };
+      socket.ondrain = function (e) {
+        writeQueue.shift();
+        release || console.info('Write completed');
+        while (writeQueue.length > 0) {
+          release || console.info('Bytes written: ' + writeQueue[0].length);
+          if (!sendData(writeQueue[0])) {
+            break;
+          }
+          writeQueue.shift();
+        }
+      };
+      socket.onclose = function (e) {
+        channel.stop(socketError);
+      };
+      socket.onerror = function (e) {
+        socketError = true;
+        console.error('socket error: ' + e.data);
+      };
+      socket.ondata = function (e) {
+        release || console.info('Bytes read: ' + e.data.byteLength);
+        channel.push(new Uint8Array(e.data));
+      };
     }
-  });
+  }
+
 
   /*
    * RtmptTransport uses systemXHR to send HTTP requests.
@@ -95,19 +99,98 @@ module RtmpJs.Browser {
    *
    * Spec at http://red5.electroteque.org/dev/doc/html/rtmpt.html
    */
-  export function RtmptTransport(connectionSettings) {
-    BaseTransport.call(this);
+  export class RtmptTransport extends BaseTransport {
+    baseUrl: string;
+    stopped: boolean;
+    sessionId: string;
+    requestId: number;
+    data: Uint8Array[];
 
-    var host = connectionSettings.host || 'localhost';
-    var url = (connectionSettings.ssl ? 'https' : 'http') + '://' + host;
-    if (connectionSettings.port) {
-      url += ':' + connectionSettings.port;
+    constructor(connectionSettings) {
+      super();
+
+      var host = connectionSettings.host || 'localhost';
+      var url = (connectionSettings.ssl ? 'https' : 'http') + '://' + host;
+      if (connectionSettings.port) {
+        url += ':' + connectionSettings.port;
+      }
+      this.baseUrl = url;
+
+      this.stopped = false;
+      this.sessionId = null;
+      this.requestId = 0;
+      this.data = [];
     }
-    this.baseUrl = url;
 
-    this.sessionId = null;
-    this.requestId = 0;
-    this.data = [];
+    connect(properties) {
+      var channel = this.initChannel(properties);
+      channel.ondata = function (data) {
+        release || console.info('Bytes written: ' + data.length);
+        this.data.push(new Uint8Array(data));
+      }.bind(this);
+      channel.onclose = function () {
+        this.stopped = true;
+      }.bind(this);
+
+
+      post(this.baseUrl + '/fcs/ident2', null, function (data, status) {
+        if (status != 404) {
+          throw 'Unexpected response: ' + status;
+        }
+
+        post(this.baseUrl + '/open/1', null, function (data, status) {
+          this.sessionId = String.fromCharCode.apply(null, data).slice(0, -1); // - '\n'
+          console.log('session id: ' + this.sessionId);
+
+          this.tick();
+          channel.start();
+        }.bind(this));
+      }.bind(this));
+    }
+
+    tick() {
+      var continueSend = function (data, status) {
+        if (status != 200) {
+          throw 'invalid status';
+        }
+
+        var idle = data[0];
+        if (data.length > 1) {
+          this.channel.push(data.subarray(1));
+        }
+        setTimeout(this.tick.bind(this), idle * 16);
+      }.bind(this);
+
+      if (this.stopped) {
+        post(this.baseUrl + '/close/2', null, function () {
+        });
+        return;
+      }
+
+      if (this.data.length > 0) {
+        var data;
+        if (COMBINE_RTMPT_DATA) {
+          var length = 0;
+          this.data.forEach(function (i) {
+            length += i.length;
+          });
+          var pos = 0;
+          data = new Uint8Array(length);
+          this.data.forEach(function (i) {
+            data.set(i, pos);
+            pos += i.length;
+          });
+          this.data.length = 0;
+        } else {
+          data = this.data.shift();
+        }
+        post(this.baseUrl + '/send/' + this.sessionId + '/' + (this.requestId++),
+          data, continueSend);
+      } else {
+        post(this.baseUrl + '/idle/' + this.sessionId + '/' + (this.requestId++),
+          null, continueSend);
+      }
+    }
   }
 
   var emptyPostData = new Uint8Array([0]);
@@ -128,77 +211,4 @@ module RtmpJs.Browser {
     };
     xhr.send(data);
   }
-
-  var COMBINE_DATA = true;
-
-  RtmptTransport.prototype = Object.create(BaseTransport.prototype, {
-    connect: {
-      value: function (properties) {
-        var channel = this.initChannel(properties);
-        channel.ondata = function (data) {
-          release || console.info('Bytes written: ' + data.length);
-          this.data.push(new Uint8Array(data));
-        }.bind(this);
-        channel.onclose = function () {
-          this.stopped = true;
-        }.bind(this);
-
-
-        post(this.baseUrl + '/fcs/ident2', null, function (data, status) {
-          if (status != 404) {
-            throw 'Unexpected response: ' + status;
-          }
-
-          post(this.baseUrl + '/open/1', null, function (data, status) {
-            this.sessionId = String.fromCharCode.apply(null,data).slice(0, -1); // - '\n'
-            console.log('session id: ' + this.sessionId);
-
-            this.tick();
-            channel.start();
-          }.bind(this));
-        }.bind(this));
-      }
-    },
-    tick: {
-      value: function () {
-        var continueSend = function (data, status) {
-          if (status != 200) {
-            throw 'invalid status';
-          }
-
-          var idle = data[0];
-          if (data.length > 1) {
-            this.channel.push(data.subarray(1));
-          }
-          setTimeout(this.tick.bind(this), idle * 16);
-        }.bind(this);
-
-        if (this.stopped) {
-          post(this.baseUrl + '/close/2', null, function () {});
-          return;
-        }
-
-        if (this.data.length > 0) {
-          var data;
-          if (COMBINE_DATA) {
-            var length = 0;
-            this.data.forEach(function (i) { length += i.length; });
-            var pos = 0;
-            data = new Uint8Array(length);
-            this.data.forEach(function (i) { data.set(i, pos); pos += i.length; });
-            this.data.length = 0;
-          } else {
-            data = this.data.shift();
-          }
-          post(this.baseUrl + '/send/' + this.sessionId + '/' + (this.requestId++),
-            data, continueSend);
-        } else {
-          post(this.baseUrl + '/idle/' + this.sessionId + '/' + (this.requestId++),
-            null, continueSend);
-        }
-      }
-    }
-  });
-
 }
-
