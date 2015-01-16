@@ -476,9 +476,14 @@ ChunkedChannel.prototype = {
 
     var chunkStream = this._getChunkStream(chunkStreamId);
 
-    var chunkTimestamp = (this.buffer[chunkHeaderPosition] << 16) |
-                         (this.buffer[chunkHeaderPosition + 1] << 8) |
-                         this.buffer[chunkHeaderPosition + 2];
+    var chunkTimestamp;
+    if (chunkType === 3) {
+      chunkTimestamp = chunkStream.lastTimestamp;
+    } else {
+      chunkTimestamp = (this.buffer[chunkHeaderPosition] << 16) |
+                       (this.buffer[chunkHeaderPosition + 1] << 8) |
+                       this.buffer[chunkHeaderPosition + 2];
+    }
     if (extendTimestampSize) {
       var chunkTimestampPosition = chunkHeaderPosition + chunkHeaderSize;
       chunkTimestamp = (this.buffer[chunkTimestampPosition] << 24) |
