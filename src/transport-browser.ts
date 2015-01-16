@@ -19,6 +19,8 @@ module RtmpJs.Browser {
   var DEFAULT_RTMP_PORT = 1935;
   var COMBINE_RTMPT_DATA = true;
 
+  var TCPSocket = (<any>navigator).mozTCPSocket;
+
   export class RtmpTransport extends BaseTransport {
     host: string;
     port: number;
@@ -37,7 +39,11 @@ module RtmpJs.Browser {
     }
 
     connect(properties, args?) {
-      var TCPSocket = (<any>navigator).mozTCPSocket;
+      if (!TCPSocket) {
+        throw new Error('Your browser does not support socket communication.\n' +
+          'Currenly only Firefox with enabled mozTCPSocket is allowed (see README.md).');
+      }
+
       var channel = this._initChannel(properties, args);
 
       var writeQueue = [], socketError = false;
