@@ -113,7 +113,9 @@ module Shumway.AVM2.AS.flash.utils {
       position: { value: 0, writable: true },
       objectEncoding: { value: 3, writable: true },
       readByte: { value: function () {
-        if (result.position >= result.length) throw 'EOF';
+        if (result.position >= result.length) {
+          throw new Error('EOF');
+        }
         return result[result.position++];
       }
       },
@@ -208,13 +210,13 @@ module Shumway.StringUtilities {
         } while (validBits >= 0);
 
         if (validBits <= 0) {
-          throw "Invalid UTF8 character";
+          throw new Error("Invalid UTF8 character");
         }
         var code = (b1 & ((1 << validBits) - 1));
         for (var i = 5; i >= validBits; --i) {
           var bi = bytes[j++];
           if ((bi & 0xC0) != 0x80) {
-            throw "Invalid UTF8 character sequence";
+            throw new Error("Invalid UTF8 character sequence");
           }
           code = (code << 6) | (bi & 0x3F);
         }

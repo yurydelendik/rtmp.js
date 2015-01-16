@@ -32,34 +32,46 @@ module RtmpJs {
   var MAX_CHUNK_STREAM_ID = 65599;
   var MAX_CHUNK_HEADER_SIZE = 18;
 
+  export interface IChunkedStreamMessage {
+    timestamp: number;
+    streamId: number;
+    chunkedStreamId: number;
+    typeId: number;
+    data: Uint8Array;
+    firstChunk: boolean;
+    lastChunk: boolean;
+  }
+
   export class ChunkedStream {
-    id: number;
+    private id: number;
+    private buffer: Uint8Array;
+    private bufferLength: number;
+
     lastStreamId: number;
     lastTimestamp: number;
     lastLength: number;
     lastTypeId: number;
-    waitingForBytes: number;
-    buffer;
-    bufferLength: number;
     lastMessageComplete: boolean;
+    waitingForBytes: number;
 
     sentStreamId: number;
     sentTimestamp: number;
     sentLength: number;
     sentTypeId: number;
 
-    onmessage: (message) => void = null;
+    public onmessage: (message: IChunkedStreamMessage) => void = null;
 
-    constructor(id: number) {
+    public constructor(id: number) {
       this.id = id;
+      this.buffer = null;
+      this.bufferLength = 0;
+
       this.lastStreamId = -1;
       this.lastTimestamp = 0;
       this.lastLength = 0;
       this.lastTypeId = 0;
-      this.waitingForBytes = 0;
-      this.buffer = null;
-      this.bufferLength = 0;
       this.lastMessageComplete = false;
+      this.waitingForBytes = 0;
 
       this.sentStreamId = -1;
       this.sentTimestamp = 0;
@@ -67,7 +79,7 @@ module RtmpJs {
       this.sentTypeId = 0;
     }
 
-    setBuffer(enabled) {
+     setBuffer(enabled: boolean) {
       if (enabled && !this.buffer) {
         this.buffer = new Uint8Array(128);
         this.bufferLength = 0;
@@ -86,6 +98,7 @@ module RtmpJs {
         this.onmessage({
           timestamp: this.lastTimestamp,
           streamId: this.lastStreamId,
+          chunkedStreamId: this.id,
           typeId: this.lastTypeId,
           data: null,
           firstChunk: false,
@@ -94,7 +107,7 @@ module RtmpJs {
       }
     }
 
-    push(data, firstChunk, lastChunk) {
+    _push(data: Uint8Array, firstChunk: boolean, lastChunk: boolean) {
       if (!this.onmessage)
         return;
 
@@ -134,31 +147,43 @@ module RtmpJs {
     }
   }
 
+  export interface IChunkedChannelUserControlMessage {
+    type: number;
+    data: Uint8Array;
+  }
+
+  export interface ISendMessage {
+    streamId: number;
+    typeId: number;
+    data: Uint8Array;
+    timestamp?: number;
+  }
+
   export class ChunkedChannel {
-    state: string;
-    buffer: Uint8Array;
-    bufferLength: number;
-    chunkSize: number;
-    chunkStreams: any[];
-    peerChunkSize: number;
-    peerAckWindowSize: number;
-    bandwidthLimitType: number;
-    windowAckSize: number;
-    bytesReceived: number;
-    lastAckSent: number;
+    private state: string;
+    private buffer: Uint8Array;
+    private bufferLength: number;
+    private chunkSize: number;
+    private chunkStreams: ChunkedStream[];
+    private peerChunkSize: number;
+    private peerAckWindowSize: number;
+    private bandwidthLimitType: number;
+    private windowAckSize: number;
+    private bytesReceived: number;
+    private lastAckSent: number;
 
-    serverVersion: number;
-    epochStart: number;
-    randomData: Uint8Array;
+    private serverVersion: number;
+    private epochStart: number;
+    private randomData: Uint8Array;
 
-    onusercontrolmessage: (message) => void = null;
-    onack: () => void = null;
-    ondata: (data) => void = function (data) { };
-    onclose: () => void = function () {};
-    oncreated: () => void = null;
-    onmessage: (message) => void; // TODO check if it's a mistake
+    public onusercontrolmessage: (message: IChunkedChannelUserControlMessage) => void = null;
+    public onack: () => void = null;
+    public ondata: (data: Uint8Array) => void = function (data) { };
+    public onclose: () => void = function () {};
+    public oncreated: () => void = null;
+    public onmessage: (message: IChunkedStreamMessage) => void;
 
-    constructor() {
+    public constructor() {
       this.state = 'uninitialized';
       this.buffer = new Uint8Array(4092);
       this.bufferLength = 0;
@@ -172,7 +197,7 @@ module RtmpJs {
       this.lastAckSent = 0;
     }
 
-    push(data) {
+    public push(data: Uint8Array) {
       var newDataLength = data.length + this.bufferLength;
       if (newDataLength > this.buffer.length) {
         var newBufferLength = this.buffer.length * 2;
@@ -180,7 +205,7 @@ module RtmpJs {
           newBufferLength *= 2;
         }
         if (newBufferLength > MAX_CHUNKED_CHANNEL_BUFFER) {
-          this.fail('Buffer overflow');
+          this._fail('Buffer overflow');
         }
         var newBuffer = new Uint8Array(newBufferLength);
         newBuffer.set(this.buffer);
@@ -208,7 +233,7 @@ module RtmpJs {
             this.serverVersion = this.buffer[0];
             shiftBy = 1;
             if (this.serverVersion != PROTOCOL_VERSION) {
-              this.fail('Unsupported protocol version: ' + this.serverVersion);
+              this._fail('Unsupported protocol version: ' + this.serverVersion);
             }
             this.state = 'version_received';
             break;
@@ -232,7 +257,7 @@ module RtmpJs {
 
             for (var i = 8; i < RANDOM_DATA_SIZE; i++) {
               if (this.buffer[i] != this.randomData[i])
-                this.fail('Random data do not match @' + i);
+                this._fail('Random data do not match @' + i);
             }
             this.state = 'handshake_done';
             this.lastAckSent = this.bytesReceived;
@@ -332,9 +357,10 @@ module RtmpJs {
       }
     }
 
-    setChunkSize(chunkSize) {
-      if (chunkSize < 1 || chunkSize > 0x7FFFFFFF)
-        throw 'Invalid chunk size';
+    public setChunkSize(chunkSize: number) {
+      if (chunkSize < 1 || chunkSize > 0x7FFFFFFF) {
+        throw new Error('Invalid chunk size');
+      }
       this._sendMessage(CONTROL_CHUNK_STREAM_ID, {
         streamId: 0,
         typeId: SET_CHUNK_SIZE_CONTROL_MESSAGE_ID,
@@ -346,14 +372,15 @@ module RtmpJs {
       this.chunkSize = chunkSize;
     }
 
-    send(chunkStreamId, message) {
+    public send(chunkStreamId: number, message: ISendMessage) {
       if (chunkStreamId < MIN_CHUNK_STREAM_ID ||
-        chunkStreamId > MAX_CHUNK_STREAM_ID)
-        throw 'Invalid chunkStreamId';
+        chunkStreamId > MAX_CHUNK_STREAM_ID) {
+        throw new Error('Invalid chunkStreamId');
+      }
       return this._sendMessage(chunkStreamId, message);
     }
 
-    sendUserControlMessage(type, data) {
+    public sendUserControlMessage(type: number, data: Uint8Array) {
       var eventData = new Uint8Array(2 + data.length);
       eventData[0] = (type >> 8) & 0xFF;
       eventData[1] = type & 0xFF;
@@ -378,7 +405,7 @@ module RtmpJs {
       });
     }
 
-    private _sendMessage(chunkStreamId, message) {
+    private _sendMessage(chunkStreamId: number, message: ISendMessage) {
       var data = message.data;
       var messageLength = data.length;
       var chunkStream = this._getChunkStream(chunkStreamId);
@@ -484,7 +511,7 @@ module RtmpJs {
       return timestamp;
     }
 
-    private  _getChunkStream(id) {
+    private  _getChunkStream(id: number) {
       var chunkStream = this.chunkStreams[id];
       if (!chunkStream) {
         this.chunkStreams[id] = chunkStream = new ChunkedStream(id);
@@ -585,16 +612,16 @@ module RtmpJs {
       chunkStream.lastStreamId = messageStreamId;
       chunkStream.lastMessageComplete = !tailLength;
       chunkStream.waitingForBytes = tailLength;
-      chunkStream.push(
+      chunkStream._push(
         this.buffer.subarray(totalChunkHeaderSize, totalChunkHeaderSize + read),
         firstChunk, !tailLength);
 
       return totalChunkHeaderSize + read;
     }
 
-    start() {
+    public start() {
       this.epochStart = Date.now();
-      this.ondata([PROTOCOL_VERSION]); // c0
+      this.ondata(new Uint8Array([PROTOCOL_VERSION])); // c0
 
       this.randomData = new Uint8Array(RANDOM_DATA_SIZE);
       this.randomData[0] = 0;
@@ -608,14 +635,14 @@ module RtmpJs {
       console.log('## connected');
     }
 
-    stop(error) {
+    public stop(error) {
       if (error) {
         console.error('socket error!!!');
       }
       console.log('## closed');
     }
 
-    fail(message) {
+    private _fail(message) {
       console.error('failed: ' + message);
       this.state = 'failed';
       this.onclose();

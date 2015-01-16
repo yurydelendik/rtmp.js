@@ -31,13 +31,39 @@ module RtmpJs {
   var PING_REQUEST_CONTROL_MESSAGE_ID = 6;
   var PING_RESPONSE_CONTROL_MESSAGE_ID = 7;
 
+  export interface ITransportConnectedParameters {
+    properties;
+    information;
+    isError: boolean;
+  }
+
+  export interface ITransportStreamCreatedParameters {
+    transactionId: number;
+    commandObject;
+    streamId: number;
+    stream: INetStream;
+    isError: boolean
+  }
+
+  export interface ITransportResponse {
+    commandName: string;
+    transactionId: number;
+    commandObject;
+    response;
+  }
+
+  export interface ITransportEvent {
+    type: number;
+    data: Uint8Array;
+  }
+
   export class BaseTransport {
     channel: ChunkedChannel;
 
-    onconnected: (props) => void;
-    onstreamcreated: (props) => void;
-    onresponse: (response) => void;
-    onevent: (event) => void;
+    onconnected: (props: ITransportConnectedParameters) => void;
+    onstreamcreated: (props: ITransportStreamCreatedParameters) => void;
+    onresponse: (response: ITransportResponse) => void;
+    onevent: (event: ITransportEvent) => void;
 
     private _streams: NetStream[];
 
@@ -45,11 +71,11 @@ module RtmpJs {
       this._streams = [];
     }
 
-    connect(props) {
-      throw new Error('abstract method');
+    connect(properties: any, args?: any) {
+      throw new Error('Abstract BaseTransport.connect method');
     }
 
-    initChannel(properties, args?) {
+    _initChannel(properties: any, args?: any) {
       var channel = new ChunkedChannel();
       var transport = this;
       channel.oncreated = function () {
@@ -66,7 +92,7 @@ module RtmpJs {
           data: new Uint8Array(<any>ba)
         });
       };
-      channel.onmessage = function (message) {
+      channel.onmessage = function (message: IChunkedStreamMessage) {
         release || console.log('.. Data received: typeId:' + message.typeId +
           ', streamId:' + message.streamId +
           ', cs: ' + message.chunkedStreamId);
@@ -118,7 +144,7 @@ module RtmpJs {
         }
         // TODO misc messages
       };
-      channel.onusercontrolmessage = function (e) {
+      channel.onusercontrolmessage = function (e: IChunkedChannelUserControlMessage) {
         release || console.log('.. Event ' + e.type + ' +' + e.data.length + ' bytes');
         if (e.type === PING_REQUEST_CONTROL_MESSAGE_ID) {
           channel.sendUserControlMessage(PING_RESPONSE_CONTROL_MESSAGE_ID, e.data);
@@ -131,7 +157,7 @@ module RtmpJs {
       return (this.channel = channel);
     }
 
-    call(procedureName, transactionId, commandObject, args) {
+    call(procedureName: string, transactionId: number, commandObject, args) {
       var channel = this.channel;
 
       var ba = new ByteArray();
@@ -147,11 +173,11 @@ module RtmpJs {
       });
     }
 
-    createStream(transactionId, commandObject) {
+    createStream(transactionId: number, commandObject) {
       this.sendCommandOrResponse('createStream', transactionId, commandObject);
     }
 
-    sendCommandOrResponse(commandName, transactionId, commandObject, response?) {
+    sendCommandOrResponse(commandName: string, transactionId: number, commandObject, response?) {
       var channel = this.channel;
 
       var ba = new ByteArray();
@@ -182,7 +208,7 @@ module RtmpJs {
        */
     }
 
-    _setBuffer(streamId, ms) {
+    _setBuffer(streamId: number, ms: number) {
       this.channel.sendUserControlMessage(SET_BUFFER_CONTROL_MESSAGE_ID, new Uint8Array([
           (streamId >> 24) & 0xFF,
           (streamId >> 16) & 0xFF,
@@ -195,7 +221,7 @@ module RtmpJs {
       ]));
     }
 
-    _sendCommand(streamId, data) {
+    _sendCommand(streamId: number, data: Uint8Array) {
       this.channel.send(8, {
         streamId: streamId,
         typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
@@ -206,20 +232,34 @@ module RtmpJs {
 
   var DEFAULT_BUFFER_LENGTH = 100; // ms
 
-  class NetStream {
+  export interface INetStreamData {
+    typeId: number;
+    data: Uint8Array;
+    timestamp: number;
+  }
+
+  export interface INetStream {
+    ondata: (data: INetStreamData) => void;
+    onscriptdata: (type: number, ...data: any[]) => void;
+    oncallback: (...args: any[]) => void;
+
+    play(name: string, start?: number, duration?: number, reset?: boolean);
+  }
+
+  class NetStream implements INetStream {
     transport: BaseTransport;
     streamId: number;
 
-    ondata: (message) => void;
-    onscriptdata: () => void;
-    oncallback: () => void;
+    ondata: (message: INetStreamData) => void;
+    onscriptdata: (type: number, ...data: any[]) => void;
+    oncallback: (...args: any[]) => void;
 
     constructor(transport, streamId) {
       this.transport = transport;
       this.streamId = streamId;
     }
 
-    play(name, start, duration, reset) {
+    public play(name: string, start?: number, duration?: number, reset?: boolean) {
       var ba = new ByteArray();
       ba.objectEncoding = TRANSPORT_ENCODING;
       ba.writeObject('play');
@@ -237,7 +277,7 @@ module RtmpJs {
       this.transport._setBuffer(this.streamId, DEFAULT_BUFFER_LENGTH);
     }
 
-    _push(message) {
+    _push(message: IChunkedStreamMessage) {
       switch (message.typeId) {
         case 8:
         case 9:

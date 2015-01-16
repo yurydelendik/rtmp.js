@@ -16,7 +16,7 @@
 
 ///<reference path='references.ts' />
 module RtmpJs.MP4 {
-  function hex(s) {
+  function hex(s: string) {
     var len = s.length >> 1;
     var arr = new Uint8Array(len);
     for (var i = 0; i < len; i++) {
@@ -25,7 +25,7 @@ module RtmpJs.MP4 {
     return arr;
   }
 
-  function flatten(arr) {
+  function flatten(arr: any): Uint8Array {
     if (arr instanceof Uint8Array)
       return arr;
     if (typeof arr === 'number')
@@ -50,31 +50,35 @@ module RtmpJs.MP4 {
     return result;
   }
 
-  function encodeInt32(n) {
+  function encodeInt32(n: number): Uint8Array {
     return new Uint8Array([(n >> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255]);
   }
 
-  function encodeUint16(n) {
+  function encodeUint16(n: number): Uint8Array {
     return new Uint8Array([(n >> 8) & 255, n & 255]);
   }
 
-  function encodeFloat(n) {
+  function encodeFloat(n: number): Uint8Array {
     return encodeInt32(n * 65536);
   }
 
-  function encodeFloat16(n) {
+  function encodeFloat16(n: number): Uint8Array {
     return encodeUint16(n * 256);
   }
 
-  function encodeLang(s) {
+  function encodeLang(s: string): Uint8Array {
     return encodeUint16(((s.charCodeAt(0) & 0x1F) << 10) | ((s.charCodeAt(1) & 0x1F) << 5) | (s.charCodeAt(2) & 0x1F));
   }
 
-  function tag(name, data) {
-    if (name.length != 4) throw 'bad tag name';
+  function tag(name: string, data: any): Uint8Array {
+    if (name.length != 4) {
+      throw new Error('bad tag name: ' + name);
+    }
     data = flatten(data);
     var len = 8 + data.length;
-    if (len > 0x7FFFFFFF) throw 'bad tag length';
+    if (len > 0x7FFFFFFF) {
+      throw new Error('bad tag length');
+    }
     return flatten([encodeInt32(len), name, data]);
   }
 
@@ -83,7 +87,17 @@ module RtmpJs.MP4 {
   var MP3_SOUND_CODEC_ID = 2;
   var AAC_SOUND_CODEC_ID = 10;
 
-  function parseAudiodata(data) {
+  interface AudioPacket {
+    codecDescription: string;
+    codecId: number;
+    data: Uint8Array;
+    rate: number;
+    size: number;
+    samples: number;
+    packetType?: number;
+  }
+
+  function parseAudiodata(data: Uint8Array): AudioPacket {
     var i = 0;
     var result: any = {
       codecDescription: SOUNDFORMATS[data[i] >> 4],
@@ -114,7 +128,18 @@ module RtmpJs.MP4 {
   var VP6_VIDEO_CODEC_ID = 4;
   var AVC_VIDEO_CODEC_ID = 7;
 
-  function parseVideodata(data) {
+  interface VideoPacket {
+    frameType: number;
+    codecId: number;
+    codecDescription: string;
+    data: Uint8Array;
+    packetType?: number;
+    compositionTime?: number;
+    horizontalOffset?: number;
+    verticalOffset?: number;
+  }
+
+  function parseVideodata(data: Uint8Array): VideoPacket {
     var i = 0;
     var frameType = data[i] >> 4;
     var codecId = data[i] & 15;
@@ -145,22 +170,42 @@ module RtmpJs.MP4 {
   var VIDEO_PACKET = 9;
   var MAX_PACKETS_IN_CHUNK = 5;
 
+  interface CachedPacket {
+    packet: any;
+    timestamp: number;
+  }
+
+  interface MP4Track {
+    language: string;
+    type: string;
+    timescale: number;
+    cache: CachedPacket[];
+    cachedDuration: number;
+
+    samplerate?: number;
+    channels?: number;
+
+    framerate?: number;
+    width?: number;
+    height?: number;
+  }
+
   export class MP4Mux {
-    metadata;
-    tracks: any[];
-    audioTrackId: number;
-    videoTrackId: number;
-    waitForAdditionalData: boolean;
-    filePos: number;
-    cachedPackets: number;
-    state: number;
-    chunkIndex: number;
+    private metadata;
+    private tracks: MP4Track[];
+    private audioTrackId: number;
+    private videoTrackId: number;
+    private waitForAdditionalData: boolean;
+    private filePos: number;
+    private cachedPackets: number;
+    private state: number;
+    private chunkIndex: number;
 
     ondata:(data) => void = function (data) {
-      throw 'not implemented';
+      throw new Error('MP4Mux.ondata is not set');
     };
 
-    constructor(metadata) {
+    public constructor(metadata) {
       this.metadata = metadata;
       this.tracks = [];
       this.audioTrackId = -1;
@@ -169,7 +214,7 @@ module RtmpJs.MP4 {
       if (metadata.trackinfo) {
         for (var i = 0; i < metadata.trackinfo.length; i++) {
           var info = metadata.trackinfo[i];
-          var track:any = {
+          var track: MP4Track = {
             language: info.language,
             type: info.sampledescription[0].sampletype,
             timescale: info.timescale,
@@ -178,35 +223,37 @@ module RtmpJs.MP4 {
           };
           if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
             this.audioTrackId = i;
-            track.samplerate = metadata.audiosamplerate;
-            track.channels = metadata.audiochannels;
+            track.samplerate = +metadata.audiosamplerate;
+            track.channels = +metadata.audiochannels;
           } else if (info.sampledescription[0].sampletype === metadata.videocodecid) {
             this.videoTrackId = i;
-            track.framerate = metadata.videoframerate;
-            track.width = metadata.width;
-            track.height = metadata.height;
+            track.framerate = +metadata.videoframerate;
+            track.width = +metadata.width;
+            track.height = +metadata.height;
           }
           this.tracks.push(track);
         }
         this.waitForAdditionalData = true;
       } else {
         if (metadata.audiocodecid) {
-          if (metadata.audiocodecid !== 2)
-            throw 'unsupported audio codec: ' + metadata.audiocodec;
+          if (metadata.audiocodecid !== 2) {
+            throw new Error('unsupported audio codec: ' + metadata.audiocodec);
+          }
           this.audioTrackId = this.tracks.length;
           this.tracks.push({
             language: "unk",
             type: "mp3",
-            timescale: metadata.audiosamplerate || 44100,
-            samplerate: metadata.audiosamplerate || 44100,
-            channels: metadata.audiochannels || 2,
+            timescale: +metadata.audiosamplerate || 44100,
+            samplerate: +metadata.audiosamplerate || 44100,
+            channels: +metadata.audiochannels || 2,
             cache: [],
             cachedDuration: 0
           });
         }
         if (metadata.videocodecid) {
-          if (metadata.videocodecid !== 4)
-            throw 'unsupported video codec: ' + metadata.videocodecid;
+          if (metadata.videocodecid !== 4) {
+            throw new Error('unsupported video codec: ' + metadata.videocodecid);
+          }
           this.videoTrackId = this.tracks.length;
           this.tracks.push({
             language: "unk",
@@ -226,7 +273,7 @@ module RtmpJs.MP4 {
       this.chunkIndex = 0;
     }
 
-    pushPacket(type, data, timestamp) {
+    public pushPacket(type: number, data: Uint8Array, timestamp: number) {
       if (this.state === 0 && !this.waitForAdditionalData) {
         this.generateHeader();
       }
@@ -236,7 +283,7 @@ module RtmpJs.MP4 {
           var audioPacket = parseAudiodata(data);
           switch (audioPacket.codecId) {
             default:
-              throw 'unsupported audio codec: ' + audioPacket.codecDescription;
+              throw new Error('unsupported audio codec: ' + audioPacket.codecDescription);
             case MP3_SOUND_CODEC_ID:
               break; // supported codec
             case AAC_SOUND_CODEC_ID:
@@ -251,32 +298,32 @@ module RtmpJs.MP4 {
           var videoPacket = parseVideodata(data);
           switch (videoPacket.codecId) {
             default:
-              throw 'unsupported video codec: ' + videoPacket.codecDescription;
+              throw new Error('unsupported video codec: ' + videoPacket.codecDescription);
             case VP6_VIDEO_CODEC_ID:
               if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
-                this.chunk();
+                this._chunk();
               break; // supported
             case AVC_VIDEO_CODEC_ID:
               if (videoPacket.packetType !== 0 && this.state === 0)
                 this.generateHeader();
               if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
-                this.chunk();
+                this._chunk();
           }
           this.tracks[this.videoTrackId].cache.push({packet: videoPacket, timestamp: timestamp});
           this.cachedPackets++;
           break;
         default:
-          throw 'unknown packet type: ' + type;
+          throw new Error('unknown packet type: ' + type);
       }
 
       if (this.cachedPackets >= MAX_PACKETS_IN_CHUNK) {
-        this.chunk();
+        this._chunk();
       }
     }
 
-    flush() {
+    public flush() {
       if (this.cachedPackets > 0) {
-        this.chunk();
+        this._chunk();
       }
     }
 
@@ -284,7 +331,7 @@ module RtmpJs.MP4 {
       var ftype = hex('000000206674797069736F6D0000020069736F6D69736F32617663316D703431');
 
       var metadata = this.metadata;
-      var codecInfo:any;
+      var codecInfo: any;
       var traks = [];
       for (var i = 0; i < this.tracks.length; i++) {
         var trak;
@@ -324,7 +371,7 @@ module RtmpJs.MP4 {
             isAudio = false;
             break;
           default:
-            throw 'not supported';
+            throw new Error('not supported track type');
         }
 
         if (isAudio) {
@@ -371,7 +418,7 @@ module RtmpJs.MP4 {
       this.state = 1;
     }
 
-    chunk() {
+    _chunk() {
       var moofOffset = flatten([hex('00000000'), encodeInt32(this.filePos)]); // TODO
       var trafParts = [], tdatParts = [], tfdts = [];
 
@@ -391,13 +438,13 @@ module RtmpJs.MP4 {
           case 'mp4a':
           case 'mp3':
             var trun1head = flatten([hex('00000305'), encodeInt32(trackInfo.cache.length)]);
-            var trun1tail = [hex('02000000')];
-            var tdat1 = [];
+            var trun1tail: any = [hex('02000000')];
+            var tdat1: any = [];
             for (var j = 0; j < trackInfo.cache.length; j++) {
-              var item = trackInfo.cache[j];
-              var audioFrameDuration = (item.packet.samples / trackInfo.samplerate * trackInfo.timescale) | 0;
-              tdat1.push(item.packet.data);
-              trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(item.packet.data.length));
+              var audioPacket: AudioPacket = trackInfo.cache[j].packet;
+              var audioFrameDuration = (audioPacket.samples / trackInfo.samplerate * trackInfo.timescale) | 0;
+              tdat1.push(audioPacket.data);
+              trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(audioPacket.data.length));
               totalDuration += audioFrameDuration;
             }
             trun1tail = flatten(trun1tail);
@@ -412,13 +459,13 @@ module RtmpJs.MP4 {
             var videoFrameDuration = (trackInfo.timescale / trackInfo.framerate) | 0;
             var firstFrameFlags = trackInfo.cache[0].packet.frameType !== 1 ? hex('01010000') : hex('02000000');
             var trun2head = flatten([hex('00000A05'), encodeInt32(trackInfo.cache.length)]);
-            var trun2tail = [firstFrameFlags];
-            var tdat2 = [];
+            var trun2tail: any = [firstFrameFlags];
+            var tdat2: any = [];
             totalDuration = trackInfo.cache.length * videoFrameDuration;
             for (var j = 0; j < trackInfo.cache.length; j++) {
-              var item = trackInfo.cache[j];
-              tdat2.push(item.packet.data);
-              trun2tail.push(encodeInt32(item.packet.data.length), encodeInt32(item.packet.compositionTime));
+              var videoPacket: VideoPacket = trackInfo.cache[j].packet;
+              tdat2.push(videoPacket.data);
+              trun2tail.push(encodeInt32(videoPacket.data.length), encodeInt32(videoPacket.compositionTime));
             }
             trun2tail = flatten(trun2tail);
             tdat2 = flatten(tdat2);
@@ -428,7 +475,7 @@ module RtmpJs.MP4 {
             tdatParts.push(tdat2);
             break;
           default:
-            throw 'unsupported codec';
+            throw new Error('unsupported codec');
         }
         trackInfo.cachedDuration += totalDuration;
         trackInfo.cache = [];

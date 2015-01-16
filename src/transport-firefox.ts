@@ -36,9 +36,9 @@ module RtmpJs.Browser {
       this.ssl = !!connectionSettings.ssl || false;
     }
 
-    connect(properties) {
+    connect(properties, args?) {
       var TCPSocket = (<any>navigator).mozTCPSocket;
-      var channel = this.initChannel(properties);
+      var channel = this._initChannel(properties, args);
 
       var writeQueue = [], socketError = false;
       var socket = TCPSocket.open(this.host, this.port,
@@ -122,8 +122,8 @@ module RtmpJs.Browser {
       this.data = [];
     }
 
-    connect(properties) {
-      var channel = this.initChannel(properties);
+    connect(properties, args?) {
+      var channel = this._initChannel(properties, args);
       channel.ondata = function (data) {
         release || console.info('Bytes written: ' + data.length);
         this.data.push(new Uint8Array(data));
@@ -135,7 +135,7 @@ module RtmpJs.Browser {
 
       post(this.baseUrl + '/fcs/ident2', null, function (data, status) {
         if (status != 404) {
-          throw 'Unexpected response: ' + status;
+          throw new Error('Unexpected response: ' + status);
         }
 
         post(this.baseUrl + '/open/1', null, function (data, status) {
@@ -151,7 +151,7 @@ module RtmpJs.Browser {
     tick() {
       var continueSend = function (data, status) {
         if (status != 200) {
-          throw 'invalid status';
+          throw new Error('Invalid HTTP status');
         }
 
         var idle = data[0];
@@ -207,7 +207,7 @@ module RtmpJs.Browser {
     };
     xhr.onerror = function (e) {
       console.log('error');
-      throw 'HTTP error';
+      throw new Error('HTTP error');
     };
     xhr.send(data);
   }

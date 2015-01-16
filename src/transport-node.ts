@@ -40,8 +40,8 @@ module RtmpJs.Node {
       this.port = connectionSettings.port || DEFAULT_RTMP_PORT;
     }
 
-    connect(properties) {
-      var channel = this.initChannel(properties);
+    connect(properties, args?) {
+      var channel = this._initChannel(properties, args);
 
       var writeQueue = [];
       var writeAllowed = true;
@@ -138,8 +138,8 @@ module RtmpJs.Node {
       req.end(new Buffer(data));
     }
 
-    connect(properties) {
-      var channel = this.initChannel(properties);
+    connect(properties, args?) {
+      var channel = this._initChannel(properties, args);
       channel.ondata = function (data) {
         release || console.info('Bytes written: ' + data.length);
         this.data.push(Array.prototype.slice.call(data, 0));
@@ -151,7 +151,7 @@ module RtmpJs.Node {
 
       this._post('/fcs/ident2', null, function (data, status) {
         if (status != 404) {
-          throw 'Unexpected response: ' + status;
+          throw new Error('Unexpected response: ' + status);
         }
 
         this._post('/open/1', null, function (data, status) {
@@ -167,7 +167,7 @@ module RtmpJs.Node {
     tick() {
       var continueSend = function (data, status) {
         if (status != 200) {
-          throw 'invalid status: ' + status;
+          throw new Error('Invalid HTTP status: ' + status);
         }
 
         var idle = data[0];
