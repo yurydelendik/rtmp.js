@@ -21,7 +21,6 @@ require('./amf.js');
 require('./rtmp.js');
 require('./transport.js');
 
-
 var RtmpTransport = (function RtmpTransportClosure() {
   var net = require('net');
   var DEFAULT_RTMP_PORT = 1935;
@@ -43,32 +42,33 @@ var RtmpTransport = (function RtmpTransportClosure() {
         var channel = this.initChannel(properties);
 
         var writeQueue = [];
+        var writeAllowed = true;
+        function sendQueued() {
+          if (writeQueue.length === 0 || !writeAllowed) {
+            return;
+          }
+          var buf = writeQueue.shift();
+          RELEASE || console.info('Bytes written: ' + buf.length);
+          writeAllowed = false;
+          client.write(buf, 'hex', function () {
+            writeAllowed = true;
+            sendQueued();
+          });
+        }
+
         var client = net.createConnection({port: this.port, host: this.host},
             function() { //'connect' listener
           channel.ondata = function (data) {
             var buf = new Buffer(data);
             writeQueue.push(buf);
-            if (writeQueue.length > 1) {
-              return;
-            }
-            RELEASE || console.info('Bytes written: ' + buf.length);
-            client.write(buf);
+            sendQueued();
           };
           channel.onclose = function () {
             client.destroy();
           };
           channel.start();
         });
-        client.setEncoding('hex');
-        client.setNoDelay(true);
-        client.on('drain', function(data) {
-          writeQueue.shift();
-          RELEASE || console.info('Write completed');
-          if (writeQueue.length > 0) {
-            RELEASE || console.info('Bytes written: ' + writeQueue[0].length);
-            client.write(writeQueue[0]);
-          }
-        });
+        client.setNoDelay();
         client.on('data', function(data) {
           RELEASE || console.info('Bytes read: ' + (data.length >> 1));
           var buf = new Buffer(data, 'hex');
