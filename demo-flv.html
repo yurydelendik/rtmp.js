@@ -1,0 +1,137 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="build/ts/rtmp.js"></script>
+</head>
+
+<body>
+  <label for="mediasource">MediaSource: </label><input type="checkbox" id="mediasource">
+  <br>
+
+  <label for="source">File: </label><select id="source">
+    <option>media/20051210-w50s_56K.flv</option>  <!-- from http://www.mediacollege.com/adobe/flash/video/tutorial/example-flv.html -->
+    <option>media/barsandtone.flv</option>
+    <option>media/big_buck_bunny_720p_h264.flv</option> <!-- from http://707foley.co/gallery3/index.php/Video/big_buck_bunny_720p_h264 -->
+  </select>
+
+  <button onclick="play(document.getElementById('source').value)">Play</button>
+  <br>
+
+  Or <label for="file">Select local: </label><input type="file" id="file" onchange="playFile()">
+  <br>
+
+  <video id="video" autoplay controls></video>
+  <br>
+
+  <h1>Notes</h1>
+  <ul>
+    <li>Needs Firefox with FFMPEG enabled, see <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1107264">Bug 1107264</a>.
+    (I had to compile ffmpeg at release/2.5 branch configured with
+    <code>./configure --enable-debug --enable-shared --disable-stripping --enable-nonfree --enable-libmp3lame --prefix=/Users/yury/Work/junk/ffmpeg-bin/</code>
+    and run Firefox with
+    <code>DYLD_LIBRARY_PATH=/Users/yury/Work/junk/ffmpeg-bin/lib/ ./mach run</code>)</li>
+    <li>VP6 is enabled at <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1107339">Bug 1107264</a></li>
+
+  </ul>
+<script>
+
+function play(url) {
+  document.getElementById('video').removeAttribute('src');
+  isMediaSourceEnabled = document.getElementById('mediasource').checked;
+  initDecoder();
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', url);
+  xhr.responseType = 'arraybuffer';
+  xhr.onload = function () {
+    var data = new Uint8Array(xhr.response);
+    flvParser.push(data);
+    flvParser.close();
+  };
+  xhr.send();
+}
+
+function playFile() {
+  var file = document.getElementById('file').files[0];
+  play(URL.createObjectURL(file));
+}
+
+var mediaSource = null;
+var mediaSourceReadyForUpdate = false;
+var mediaBuffer = null;
+var isMediaSourceEnabled = false;
+function initMediaSource() {
+  mediaSource = new MediaSource();
+  mediaSource.addEventListener('sourceopen', function(e) {
+    mediaBuffer = mediaSource.addSourceBuffer('video/mp4');
+    mediaSourceReadyForUpdate = true;
+    updateMediaSource();
+  }.bind(this));
+  mediaSource.addEventListener('sourceend', function(e) {
+    mediaSource = null;
+  });
+}
+
+function updateMediaSource() {
+  if (!mediaSourceReadyForUpdate || mp4File.length === 0) {
+    return;
+  }
+  var bytes = mp4File.shift();
+  mediaBuffer.appendBuffer(bytes);
+  mediaSourceReadyForUpdate = false;
+  mediaBuffer.addEventListener('update', function updateHandler() {
+    mediaBuffer.removeEventListener('update', updateHandler);
+    mediaSourceReadyForUpdate = true;
+    updateMediaSource();
+  });
+}
+
+
+var flvParser = null;
+var mp4Mux = null;
+var mp4File = null;
+function initDecoder() {
+  mp4File = [];
+
+  if (isMediaSourceEnabled) {
+    initMediaSource();
+    document.getElementById('video').src = URL.createObjectURL(mediaSource);
+  }
+
+  flvParser = new RtmpJs.FLV.FLVParser();
+  flvParser.onHeader = function (header) {
+    console.log(header);
+  };
+  flvParser.onTag = function (data) {
+    if (data.type === 18) {
+      var ba = new Shumway.AVM2.AS.flash.utils.ByteArray(data.data);
+      var name = Shumway.AVM2.AMF0.read(ba);
+      var value = Shumway.AVM2.AMF0.read(ba);
+      if (name == 'onMetaData') {
+        mp4Mux = new RtmpJs.MP4.MP4Mux(value);
+        mp4Mux.ondata = function onMP4Data(data) {
+          mp4File.push(data);
+          if (isMediaSourceEnabled) {
+            updateMediaSource();
+          }
+        };
+      }
+      return;
+    }
+    mp4Mux.pushPacket(data.type, data.data);
+  };
+  flvParser.onClose = function () {
+    mp4Mux.flush();
+    mp4Mux = null;
+    flvParser = null;
+
+    if (!isMediaSourceEnabled) {
+      document.getElementById('video').src = URL.createObjectURL(new Blob(mp4File, {type:'video/mp4'}));
+      mp4File = null;
+    }
+  };
+}
+
+</script>
+
+</body></html>
