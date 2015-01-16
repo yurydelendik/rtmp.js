@@ -56,7 +56,7 @@ module RtmpJs.Browser {
           if (writeQueue.length > 1) {
             return;
           }
-          release || console.info('Bytes written: ' + buf.length);
+          release || console.log('Bytes written: ' + buf.length);
           if (sendData(buf)) {
             writeQueue.shift();
           }
@@ -68,9 +68,9 @@ module RtmpJs.Browser {
       };
       socket.ondrain = function (e) {
         writeQueue.shift();
-        release || console.info('Write completed');
+        release || console.log('Write completed');
         while (writeQueue.length > 0) {
-          release || console.info('Bytes written: ' + writeQueue[0].length);
+          release || console.log('Bytes written: ' + writeQueue[0].length);
           if (!sendData(writeQueue[0])) {
             break;
           }
@@ -85,7 +85,7 @@ module RtmpJs.Browser {
         console.error('socket error: ' + e.data);
       };
       socket.ondata = function (e) {
-        release || console.info('Bytes read: ' + e.data.byteLength);
+        release || console.log('Bytes read: ' + e.data.byteLength);
         channel.push(new Uint8Array(e.data));
       };
     }
@@ -125,7 +125,7 @@ module RtmpJs.Browser {
     connect(properties, args?) {
       var channel = this._initChannel(properties, args);
       channel.ondata = function (data) {
-        release || console.info('Bytes written: ' + data.length);
+        release || console.log('Bytes written: ' + data.length);
         this.data.push(new Uint8Array(data));
       }.bind(this);
       channel.onclose = function () {
@@ -134,7 +134,7 @@ module RtmpJs.Browser {
 
 
       post(this.baseUrl + '/fcs/ident2', null, function (data, status) {
-        if (status != 404) {
+        if (status !== 404) {
           throw new Error('Unexpected response: ' + status);
         }
 
@@ -150,7 +150,7 @@ module RtmpJs.Browser {
 
     tick() {
       var continueSend = function (data, status) {
-        if (status != 200) {
+        if (status !== 200) {
           throw new Error('Invalid HTTP status');
         }
 
@@ -163,6 +163,7 @@ module RtmpJs.Browser {
 
       if (this.stopped) {
         post(this.baseUrl + '/close/2', null, function () {
+          // do nothing
         });
         return;
       }

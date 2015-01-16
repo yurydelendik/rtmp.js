@@ -17,7 +17,7 @@
 
 ///<reference path='references.ts' />
 module RtmpJs.Node {
-  declare function require(name:string):any;
+  declare function require(name: string): any;
 
   declare var Buffer;
 
@@ -26,14 +26,14 @@ module RtmpJs.Node {
   var COMBINE_RTMPT_DATA = false;
 
   export class RtmpTransport extends BaseTransport {
-    host:string;
-    port:number;
+    host: string;
+    port: number;
 
     constructor(connectionSettings) {
       super();
 
       if (typeof connectionSettings === 'string') {
-        connectionSettings = {host: connectionSettings};
+        connectionSettings = { host: connectionSettings };
       }
 
       this.host = connectionSettings.host || 'localhost';
@@ -51,7 +51,7 @@ module RtmpJs.Node {
           return;
         }
         var buf = writeQueue.shift();
-        release || console.info('Bytes written: ' + buf.length);
+        release || console.log('Bytes written: ' + buf.length);
         writeAllowed = false;
         client.write(buf, 'hex', function () {
           writeAllowed = true;
@@ -73,7 +73,7 @@ module RtmpJs.Node {
         });
       client.setNoDelay();
       client.on('data', function (data) {
-        release || console.info('Bytes read: ' + (data.length >> 1));
+        release || console.log('Bytes read: ' + (data.length >> 1));
         var buf = new Buffer(data, 'hex');
         channel.push(buf);
       });
@@ -141,7 +141,7 @@ module RtmpJs.Node {
     connect(properties, args?) {
       var channel = this._initChannel(properties, args);
       channel.ondata = function (data) {
-        release || console.info('Bytes written: ' + data.length);
+        release || console.log('Bytes written: ' + data.length);
         this.data.push(Array.prototype.slice.call(data, 0));
       }.bind(this);
       channel.onclose = function () {
@@ -150,7 +150,7 @@ module RtmpJs.Node {
 
 
       this._post('/fcs/ident2', null, function (data, status) {
-        if (status != 404) {
+        if (status !== 404) {
           throw new Error('Unexpected response: ' + status);
         }
 
@@ -166,7 +166,7 @@ module RtmpJs.Node {
 
     tick() {
       var continueSend = function (data, status) {
-        if (status != 200) {
+        if (status !== 200) {
           throw new Error('Invalid HTTP status: ' + status);
         }
 
@@ -183,6 +183,7 @@ module RtmpJs.Node {
 
       if (this.stopped) {
         this._post('/close/2', null, function () {
+          // do nothing
         });
         return;
       }

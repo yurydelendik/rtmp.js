@@ -26,14 +26,17 @@ module RtmpJs.MP4 {
   }
 
   function flatten(arr: any): Uint8Array {
-    if (arr instanceof Uint8Array)
+    if (arr instanceof Uint8Array) {
       return arr;
-    if (typeof arr === 'number')
+    }
+    if (typeof arr === 'number') {
       return new Uint8Array([arr]);
+    }
     if (typeof arr === 'string') {
       var result = new Uint8Array(arr.length);
-      for (var i = 0; i < result.length; i++)
+      for (var i = 0; i < result.length; i++) {
         result[i] = arr.charCodeAt(i) & 255;
+      }
       return result;
     }
     arr = arr.map(flatten);
@@ -71,7 +74,7 @@ module RtmpJs.MP4 {
   }
 
   function tag(name: string, data: any): Uint8Array {
-    if (name.length != 4) {
+    if (name.length !== 4) {
       throw new Error('bad tag name: ' + name);
     }
     data = flatten(data);
@@ -201,7 +204,7 @@ module RtmpJs.MP4 {
     private state: number;
     private chunkIndex: number;
 
-    ondata:(data) => void = function (data) {
+    ondata: (data) => void = function (data) {
       throw new Error('MP4Mux.ondata is not set');
     };
 
@@ -287,8 +290,9 @@ module RtmpJs.MP4 {
             case MP3_SOUND_CODEC_ID:
               break; // supported codec
             case AAC_SOUND_CODEC_ID:
-              if (audioPacket.packetType !== 0 && this.state === 0)
+              if (audioPacket.packetType !== 0 && this.state === 0) {
                 this.generateHeader();
+              }
               break;
           }
           this.tracks[this.audioTrackId].cache.push({packet: audioPacket, timestamp: timestamp});
@@ -300,14 +304,18 @@ module RtmpJs.MP4 {
             default:
               throw new Error('unsupported video codec: ' + videoPacket.codecDescription);
             case VP6_VIDEO_CODEC_ID:
-              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
+              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) { // keyframe
                 this._chunk();
+              }
               break; // supported
             case AVC_VIDEO_CODEC_ID:
-              if (videoPacket.packetType !== 0 && this.state === 0)
+              if (videoPacket.packetType !== 0 && this.state === 0) {
                 this.generateHeader();
-              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) // keyframe
+              }
+              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) { // keyframe
                 this._chunk();
+              }
+              break;
           }
           this.tracks[this.videoTrackId].cache.push({packet: videoPacket, timestamp: timestamp});
           this.cachedPackets++;
@@ -428,8 +436,9 @@ module RtmpJs.MP4 {
       for (var i = 0; i < this.tracks.length; i++) {
         var trak;
         var trackInfo = this.tracks[i], trackId = i + 1;
-        if (trackInfo.cache.length === 0)
+        if (trackInfo.cache.length === 0) {
           continue;
+        }
         var currentTrackTime = (trackInfo.cache[0].timestamp * trackInfo.timescale / 1000) | 0;
         //tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(currentTrackTime)]));
         tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(trackInfo.cachedDuration)]));

@@ -108,9 +108,9 @@ module RtmpJs {
     }
 
     _push(data: Uint8Array, firstChunk: boolean, lastChunk: boolean) {
-      if (!this.onmessage)
+      if (!this.onmessage) {
         return;
-
+      }
       if ((firstChunk && lastChunk) || !this.buffer) {
         this.onmessage({
           timestamp: this.lastTimestamp,
@@ -178,8 +178,8 @@ module RtmpJs {
 
     public onusercontrolmessage: (message: IChunkedChannelUserControlMessage) => void = null;
     public onack: () => void = null;
-    public ondata: (data: Uint8Array) => void = function (data) { };
-    public onclose: () => void = function () {};
+    public ondata: (data: Uint8Array) => void = function (data) { /* do nothing */ };
+    public onclose: () => void = function () { /* do nothing */ };
     public oncreated: () => void = null;
     public onmessage: (message: IChunkedStreamMessage) => void;
 
@@ -224,22 +224,24 @@ module RtmpJs {
       }
 
       while (this.bufferLength > 0) {
-        // console.info('current bufferLength: ' + this.bufferLength + ' state:' + this.state);
+        // release || console.log('current bufferLength: ' + this.bufferLength + ' state:' + this.state);
         var shiftBy = 0;
         switch (this.state) {
           case 'uninitialized':
-            if (this.bufferLength < 1)
+            if (this.bufferLength < 1) {
               return;
+            }
             this.serverVersion = this.buffer[0];
             shiftBy = 1;
-            if (this.serverVersion != PROTOCOL_VERSION) {
+            if (this.serverVersion !== PROTOCOL_VERSION) {
               this._fail('Unsupported protocol version: ' + this.serverVersion);
             }
             this.state = 'version_received';
             break;
           case 'version_received':
-            if (this.bufferLength < RANDOM_DATA_SIZE)
+            if (this.bufferLength < RANDOM_DATA_SIZE) {
               return;
+            }
             shiftBy = RANDOM_DATA_SIZE;
 
             var timestamp = (Date.now() - this.epochStart) | 0;
@@ -251,13 +253,15 @@ module RtmpJs {
             this.state = 'ack_sent';
             break;
           case 'ack_sent':
-            if (this.bufferLength < RANDOM_DATA_SIZE)
+            if (this.bufferLength < RANDOM_DATA_SIZE) {
               return;
+            }
             shiftBy = RANDOM_DATA_SIZE;
 
             for (var i = 8; i < RANDOM_DATA_SIZE; i++) {
-              if (this.buffer[i] != this.randomData[i])
+              if (this.buffer[i] !== this.randomData[i]) {
                 this._fail('Random data do not match @' + i);
+              }
             }
             this.state = 'handshake_done';
             this.lastAckSent = this.bytesReceived;
@@ -265,8 +269,9 @@ module RtmpJs {
             break;
           case 'handshake_done':
             shiftBy = this._parseChunkedData();
-            if (!shiftBy)
+            if (!shiftBy) {
               return;
+            }
             break;
           default:
             return;
@@ -280,8 +285,9 @@ module RtmpJs {
       var controlStream = this._getChunkStream(CONTROL_CHUNK_STREAM_ID);
       controlStream.setBuffer(true);
       controlStream.onmessage = function (e) {
-        if (e.streamId !== 0)
+        if (e.streamId !== 0) {
           return;
+        }
         release || console.log('Control message: ' + e.typeId);
         switch (e.typeId) {
           case SET_CHUNK_SIZE_CONTROL_MESSAGE_ID:
@@ -316,24 +322,24 @@ module RtmpJs {
           case ACK_WINDOW_SIZE_MESSAGE_ID:
             var ackWindowSize = (e.data[0] << 24) | (e.data[1] << 16) |
               (e.data[2] << 8) | e.data[3];
-            if (ackWindowSize < 0)
+            if (ackWindowSize < 0) {
               break;
-
+            }
             this.peerAckWindowSize = ackWindowSize;
             break;
           case SET_PEER_BANDWIDTH_MESSAGE_ID:
             var ackWindowSize = (e.data[0] << 24) | (e.data[1] << 16) |
               (e.data[2] << 8) | e.data[3];
             var limitType = e.data[4];
-            if (ackWindowSize < 0 || limitType > 2)
+            if (ackWindowSize < 0 || limitType > 2) {
               break;
-
+            }
             if (limitType === 1 ||
               (limitType === 2 && this.bandwidthLimitType === 1)) {
               ackWindowSize = Math.min(this.windowAckSize, ackWindowSize);
             }
 
-            if (ackWindowSize != this.ackWindowSize) {
+            if (ackWindowSize !== this.ackWindowSize) {
               this.ackWindowSize = ackWindowSize;
               var ackData = new Uint8Array([(ackWindowSize >>> 24) & 0xFF,
                   (ackWindowSize >>> 16) & 0xFF,
@@ -344,7 +350,7 @@ module RtmpJs {
                 streamId: 0,
                 data: ackData
               });
-              if (limitType != 2) {
+              if (limitType !== 2) {
                 this.bandwidthLimitType = limitType;
               }
             }
@@ -526,33 +532,38 @@ module RtmpJs {
     }
 
     private _parseChunkedData() {
-      if (this.bufferLength < 1)
+      if (this.bufferLength < 1) {
         return;
+      }
       var chunkType = (this.buffer[0] >> 6) & 3;
       var chunkHeaderPosition = 1;
       var chunkStreamId = this.buffer[0] & 0x3F;
       if (chunkStreamId === 0) {
-        if (this.bufferLength < 2) return;
+        if (this.bufferLength < 2) {
+          return; }
         chunkStreamId = this.buffer[1] + 64;
         chunkHeaderPosition = 2;
       } else if (chunkStreamId === 1) {
-        if (this.bufferLength < 2) return;
+        if (this.bufferLength < 2) {
+          return;
+        }
         chunkStreamId = (this.buffer[1] << 8) + this.buffer[2] + 64;
         chunkHeaderPosition = 3;
       }
       var chunkHeaderSize = chunkType === 0 ? 11 : chunkType === 1 ? 7 :
           chunkType === 2 ? 3 : 0;
-      if (this.bufferLength < chunkHeaderPosition + chunkHeaderSize)
+      if (this.bufferLength < chunkHeaderPosition + chunkHeaderSize) {
         return;
+      }
       var extendTimestampSize = chunkType !== 3 &&
-        this.buffer[chunkHeaderPosition] == 0xFF &&
-        this.buffer[chunkHeaderPosition + 1] == 0xFF &&
-        this.buffer[chunkHeaderPosition + 2] == 0xFF ? 4 : 0;
+        this.buffer[chunkHeaderPosition] === 0xFF &&
+        this.buffer[chunkHeaderPosition + 1] === 0xFF &&
+        this.buffer[chunkHeaderPosition + 2] === 0xFF ? 4 : 0;
       var totalChunkHeaderSize = chunkHeaderPosition + chunkHeaderSize +
         extendTimestampSize;
-      if (this.bufferLength < totalChunkHeaderSize)
+      if (this.bufferLength < totalChunkHeaderSize) {
         return;
-
+      }
       var chunkStream = this._getChunkStream(chunkStreamId);
 
       var chunkTimestamp: number;
@@ -600,9 +611,9 @@ module RtmpJs {
         read = Math.min(messageLength, this.peerChunkSize);
         tailLength = messageLength - read;
       }
-      if (this.bufferLength < totalChunkHeaderSize + read)
+      if (this.bufferLength < totalChunkHeaderSize + read) {
         return;
-
+      }
       release || (!firstChunk && tailLength) || // limiting trace to first/last chunks
       console.log('Chunk received: cs:' + chunkStreamId + '; ' +
         'f/l:' + firstChunk + '/' + (!tailLength) + ';  len:' + messageLength);

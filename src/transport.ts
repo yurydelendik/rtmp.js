@@ -186,8 +186,9 @@ module RtmpJs {
       ba.writeObject(commandName);
       ba.writeObject(transactionId);
       ba.writeObject(commandObject || null);
-      if (arguments.length > 3)
+      if (arguments.length > 3) {
         ba.writeObject(response);
+      }
       channel.send(MAIN_CHUNKED_STREAM_ID, {
         streamId: DEFAULT_STREAM_ID,
         typeId: COMMAND_MESSAGE_AMF3_ID,
@@ -266,12 +267,15 @@ module RtmpJs {
       ba.writeObject(0);
       ba.writeObject(null);
       ba.writeObject(name);
-      if (arguments.length > 1)
+      if (arguments.length > 1) {
         ba.writeObject(start);
-      if (arguments.length > 2)
+      }
+      if (arguments.length > 2) {
         ba.writeObject(duration);
-      if (arguments.length > 3)
+      }
+      if (arguments.length > 3) {
         ba.writeObject(reset);
+      }
       this.transport._sendCommand(this.streamId, new Uint8Array(<any>ba));
       // set the buffer, otherwise it will stop in ~15 sec
       this.transport._setBuffer(this.streamId, DEFAULT_BUFFER_LENGTH);

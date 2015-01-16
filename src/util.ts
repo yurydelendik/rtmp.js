@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// parts and shims of the Mozilla Shumway project to run amf.js logic
+// Parts and shims of the Mozilla Shumway project to run amf.ts file logic.
 
 var jsGlobal = (function() { return this || (1, eval)('this//# sourceURL=jsGlobal-getter'); })();
 
@@ -54,7 +54,7 @@ Object.defineProperty(Object.prototype, 'asSetPublicProperty', {
 })();
 
 module Shumway {
-  export function isNumeric(a) {
+  export function isNumeric(a: any): boolean {
     return +a == a;
   }
 }
@@ -107,7 +107,9 @@ module Shumway.AVM2.AS.flash.utils {
   function buildByteArray(a?) {
     var result: any = [];
     if (a) {
-      for (var i = 0; i < a.length; i++) result[i] = a[i];
+      for (var i = 0; i < a.length; i++) {
+        result[i] = a[i];
+      }
     }
     Object.defineProperties(result, {
       position: { value: 0, writable: true },
@@ -204,7 +206,9 @@ module Shumway.StringUtilities {
         var validBits = 5;
         do {
           var mask = (currentPrefix >> 1) | 0x80;
-          if ((b1 & mask) === currentPrefix) break;
+          if ((b1 & mask) === currentPrefix) {
+            break;
+          }
           currentPrefix = (currentPrefix >> 1) | 0x80;
           --validBits;
         } while (validBits >= 0);
@@ -215,7 +219,7 @@ module Shumway.StringUtilities {
         var code = (b1 & ((1 << validBits) - 1));
         for (var i = 5; i >= validBits; --i) {
           var bi = bytes[j++];
-          if ((bi & 0xC0) != 0x80) {
+          if ((bi & 0xC0) !== 0x80) {
             throw new Error("Invalid UTF8 character sequence");
           }
           code = (code << 6) | (bi & 0x3F);
