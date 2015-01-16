@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-var MAX_CHUNKED_CHANNEL_BUFFER = 0x40000;
+var MAX_CHUNKED_CHANNEL_BUFFER = 0x80000;
 var RANDOM_DATA_SIZE = 1536;
 var PROTOCOL_VERSION = 3;
 
@@ -212,7 +212,7 @@ ChunkedChannel.prototype = {
     controlStream.onmessage = function (e) {
       if (e.streamId !== 0)
         return;
-      RELEASE || console.info('Control message: ' + e.typeId);
+      RELEASE || console.log('Control message: ' + e.typeId);
       switch (e.typeId) {
       case SET_CHUNK_SIZE_CONTROL_MESSAGE_ID:
         var newChunkSize = (e.data[0] << 24) | (e.data[1] << 16) |
@@ -476,9 +476,14 @@ ChunkedChannel.prototype = {
 
     var chunkStream = this._getChunkStream(chunkStreamId);
 
-    var chunkTimestamp = (this.buffer[chunkHeaderPosition] << 16) |
-                         (this.buffer[chunkHeaderPosition + 1] << 8) |
-                         this.buffer[chunkHeaderPosition + 2];
+    var chunkTimestamp;
+    if (chunkType === 3) {
+      chunkTimestamp = chunkStream.lastTimestamp;
+    } else {
+      chunkTimestamp = (this.buffer[chunkHeaderPosition] << 16) |
+                       (this.buffer[chunkHeaderPosition + 1] << 8) |
+                       this.buffer[chunkHeaderPosition + 2];
+    }
     if (extendTimestampSize) {
       var chunkTimestampPosition = chunkHeaderPosition + chunkHeaderSize;
       chunkTimestamp = (this.buffer[chunkTimestampPosition] << 24) |

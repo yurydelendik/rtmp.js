@@ -42,22 +42,8 @@ var RtmpTransport = (function RtmpTransportClosure() {
           { useSSL: this.ssl, binaryType: 'arraybuffer' });
 
 
-        // the socket send API changed (see 831107 and 863770), trying both
-        // kinds: Uint8Array first, then ArrayBuffer, and patching for
-        // subsequent calls.
         var sendData = function (data) {
-          try {
-            var result = socket.send(data);
-            // old way is good
-            sendData = socket.send.bind(socket);
-            return result;
-          } catch (ex) {
-            // new version of API
-            sendData = function (data) {
-              return socket.send(data.buffer, data.byteOffset, data.byteLength);
-            };
-            return sendData(data);
-          }
+          return socket.send(data.buffer, data.byteOffset, data.byteLength);
         };
 
         socket.onopen = function (e) {
