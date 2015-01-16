@@ -1,0 +1,29 @@
+{
+  "name": "rtmp.js",
+  "version": "0.3.0",
+  "devDependencies": {
+    "grunt": "~0.4.2",
+    "grunt-tslint": "~0.4.2",
+    "grunt-exec": "~0.4.2"
+  },
+  "description": "RTMP support in JavaScript experiment",
+  "main": "Gruntfile.js",
+  "directories": {
+    "test": "src"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yurydelendik/rtmp.js.git"
+  },
+  "author": "Mozilla Research",
+  "licenses" : [{
+    "type": "Apache",
+    "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+  }],
+  "bugs": {
+    "url": "https://github.com/yurydelendik/rtmp.js/issues"
+  }
+}

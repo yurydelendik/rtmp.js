@@ -1,7 +1,5 @@
-/* -*- Mode: js; js-indent-level: 2; indent-tabs-mode: nil; tab-width: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /*
- * Copyright 2013 Mozilla Foundation
+ * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +14,18 @@
  * limitations under the License.
  */
 
-require('./util.js');
-require('./amf.js');
-require('./rtmp.js');
-require('./transport.js');
 
-var RtmpTransport = (function RtmpTransportClosure() {
+///<reference path='references.ts' />
+module RtmpJs.Node {
+  import RELEASE = Shumway.RELEASE;
+
+  declare function require(name: string): any;
+  declare var Buffer;
+
   var net = require('net');
   var DEFAULT_RTMP_PORT = 1935;
 
-  function RtmpTransport(connectionSettings) {
+  export function RtmpTransport(connectionSettings) {
     BaseTransport.call(this);
 
     if (typeof connectionSettings === 'string') {
@@ -43,6 +43,7 @@ var RtmpTransport = (function RtmpTransportClosure() {
 
         var writeQueue = [];
         var writeAllowed = true;
+
         function sendQueued() {
           if (writeQueue.length === 0 || !writeAllowed) {
             return;
@@ -57,37 +58,34 @@ var RtmpTransport = (function RtmpTransportClosure() {
         }
 
         var client = net.createConnection({port: this.port, host: this.host},
-            function() { //'connect' listener
-          channel.ondata = function (data) {
-            var buf = new Buffer(data);
-            writeQueue.push(buf);
-            sendQueued();
-          };
-          channel.onclose = function () {
-            client.destroy();
-          };
-          channel.start();
-        });
+          function () { //'connect' listener
+            channel.ondata = function (data) {
+              var buf = new Buffer(data);
+              writeQueue.push(buf);
+              sendQueued();
+            };
+            channel.onclose = function () {
+              client.destroy();
+            };
+            channel.start();
+          });
         client.setNoDelay();
-        client.on('data', function(data) {
+        client.on('data', function (data) {
           RELEASE || console.info('Bytes read: ' + (data.length >> 1));
           var buf = new Buffer(data, 'hex');
           channel.push(buf);
         });
-        client.on('close', function(obj) {
+        client.on('close', function (obj) {
           channel.stop(obj.has_error);
         });
       }
     }
   });
 
-  return RtmpTransport;
-})();
 
-var RtmptTransport = (function RtmpTransportClosure() {
   var http = require('http');
 
-  function RtmptTransport(connectionSettings) {
+  export function RtmptTransport(connectionSettings) {
     BaseTransport.call(this);
 
     this.host = connectionSettings.host || 'localhost';
@@ -153,7 +151,7 @@ var RtmptTransport = (function RtmpTransportClosure() {
           }
 
           this._post('/open/1', null, function (data, status) {
-            this.sessionId = String.fromCharCode.apply(null,data).slice(0, -1); // - '\n'
+            this.sessionId = String.fromCharCode.apply(null, data).slice(0, -1); // - '\n'
             console.log('session id: ' + this.sessionId);
 
             this.tick();
@@ -181,7 +179,8 @@ var RtmptTransport = (function RtmpTransportClosure() {
         }.bind(this);
 
         if (this.stopped) {
-          this._post('/close/2', null, function () {});
+          this._post('/close/2', null, function () {
+          });
           return;
         }
 
@@ -189,10 +188,15 @@ var RtmptTransport = (function RtmpTransportClosure() {
           var data;
           if (COMBINE_DATA) {
             var length = 0;
-            this.data.forEach(function (i) { length += i.length; });
+            this.data.forEach(function (i) {
+              length += i.length;
+            });
             var pos = 0;
             data = new Uint8Array(length);
-            this.data.forEach(function (i) { data.set(i, pos); pos += i.length; });
+            this.data.forEach(function (i) {
+              data.set(i, pos);
+              pos += i.length;
+            });
             this.data.length = 0;
           } else {
             data = this.data.shift();
@@ -206,9 +210,7 @@ var RtmptTransport = (function RtmpTransportClosure() {
       }
     }
   });
+}
 
-  return RtmptTransport;
-})();
-
-exports.RtmpTransport = RtmpTransport;
-exports.RtmptTransport = RtmptTransport;
+declare var exports;
+exports.RtmpJs = RtmpJs;

@@ -16,11 +16,7 @@ limitations under the License.
 -->
 <html>
   <head>
-    <script src="src/util.js"></script>
-    <script src="src/amf.js"></script>
-    <script src="src/rtmp.js"></script>
-    <script src="src/transport.js"></script>
-    <script src="src/transport-firefox.js"></script>
+    <script src="build/ts/rtmp.js"></script>
   </head>
   <body>
     <h1>RTMP demo</h1>
@@ -41,8 +37,8 @@ limitations under the License.
             };
 
 
-    var rtmp = new RtmpTransport({host:'localhost', port:1935});
-    //var rtmp = new RtmptTransport({host:'localhost', port:5080});
+    var rtmp = new RtmpJs.Browser.RtmpTransport({host:'localhost', port:1935});
+    //var rtmp = new RtmpJs.Browser.RtmptTransport({host:'localhost', port:5080});
 
     rtmp.onresponse = function (e) {
       console.log('#response');

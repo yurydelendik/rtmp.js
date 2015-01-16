@@ -16,12 +16,7 @@ limitations under the License.
 -->
 <html>
   <head>
-    <script src="src/util.js"></script>
-    <script src="src/amf.js"></script>
-    <script src="src/rtmp.js"></script>
-    <script src="src/transport.js"></script>
-    <script src="src/transport-firefox.js"></script>
-    <script src="src/mp4mux.js"></script>
+    <script src="build/ts/rtmp.js"></script>
   </head>
   <body>
     <h1>RTMP demo</h1>
@@ -49,8 +44,8 @@ limitations under the License.
 
 
     var rtmp = startInfo.schema == 'rtmp' ?
-      new RtmpTransport({host:startInfo.host, port:1935}) :
-      new RtmptTransport({host:startInfo.host, port:5080});
+      new RtmpJs.Browser.RtmpTransport({host:startInfo.host, port:1935}) :
+      new RtmpJs.Browser.RtmptTransport({host:startInfo.host, port:5080});
 
     rtmp.onresponse = function (e) {
       console.log('#response');
@@ -110,7 +105,7 @@ limitations under the License.
         this.initialized = true;
         this.file = [];
         this.fileLength = 0;
-        this.mux = new MP4Mux(metadata);
+        this.mux = new RtmpJs.MP4.MP4Mux(metadata);
         this.mux.ondata = function (data) {
           if (this.fileLength > mp4MaxSize) return;
 

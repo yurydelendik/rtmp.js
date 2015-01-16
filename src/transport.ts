@@ -1,7 +1,5 @@
-/* -*- Mode: js; js-indent-level: 2; indent-tabs-mode: nil; tab-width: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /*
- * Copyright 2013 Mozilla Foundation
+ * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +14,13 @@
  * limitations under the License.
  */
 
-var TRANSPORT_ENCODING = 0;
+///<reference path='references.ts' />
+module RtmpJs {
+  import RELEASE = Shumway.RELEASE;
+  import ByteArray = Shumway.ByteArray;
 
-var BaseTransport = (function BaseTransportClosure() {
+  var TRANSPORT_ENCODING = 0;
+
   var MAIN_CHUNKED_STREAM_ID = 3;
   var CONNECT_TRANSACTION_ID = 1;
   var DEFAULT_STREAM_ID = 0;
@@ -30,7 +32,7 @@ var BaseTransport = (function BaseTransportClosure() {
   var PING_REQUEST_CONTROL_MESSAGE_ID = 6;
   var PING_RESPONSE_CONTROL_MESSAGE_ID = 7;
 
-  function BaseTransport() {
+  export function BaseTransport() {
     this.streams = [];
   }
 
@@ -55,8 +57,8 @@ var BaseTransport = (function BaseTransportClosure() {
         };
         channel.onmessage = function (message) {
           RELEASE || console.log('.. Data received: typeId:' + message.typeId +
-                                 ', streamId:' + message.streamId +
-                                 ', cs: ' + message.chunkedStreamId);
+            ', streamId:' + message.streamId +
+            ', cs: ' + message.chunkedStreamId);
 
           if (message.streamId !== 0) {
             transport.streams[message.streamId]._push(message);
@@ -64,7 +66,7 @@ var BaseTransport = (function BaseTransportClosure() {
           }
 
           if (message.typeId === COMMAND_MESSAGE_AMF0_ID ||
-              message.typeId === COMMAND_MESSAGE_AMF3_ID) {
+            message.typeId === COMMAND_MESSAGE_AMF3_ID) {
             var ba = new ByteArray(message.data);
             ba.objectEncoding = message.typeId === COMMAND_MESSAGE_AMF0_ID ? 0 : 3;
             var commandName = ba.readObject();
@@ -157,31 +159,31 @@ var BaseTransport = (function BaseTransportClosure() {
           data: new Uint8Array(ba)
         });
 
- /*     // really weird that this does not work
-        var ba = new ByteArray();
-        ba.objectEncoding = TRANSPORT_ENCODING;
-        ba.writeObject('createStream');
-        ba.writeObject(transactionId);
-        ba.writeObject(commandObject || null);
-        channel.send(MAIN_CHUNKED_STREAM_ID, {
-          streamId: DEFAULT_STREAM_ID,
-          typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-          data: new Uint8Array(ba)
-        });
-*/
+        /*     // really weird that this does not work
+         var ba = new ByteArray();
+         ba.objectEncoding = TRANSPORT_ENCODING;
+         ba.writeObject('createStream');
+         ba.writeObject(transactionId);
+         ba.writeObject(commandObject || null);
+         channel.send(MAIN_CHUNKED_STREAM_ID, {
+         streamId: DEFAULT_STREAM_ID,
+         typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
+         data: new Uint8Array(ba)
+         });
+         */
       }
     },
     _setBuffer: {
       value: function (streamId, ms) {
         this.channel.sendUserControlMessage(SET_BUFFER_CONTROL_MESSAGE_ID, new Uint8Array([
-          (streamId >> 24) & 0xFF,
-          (streamId >> 16) & 0xFF,
-          (streamId >> 8) & 0xFF,
-          streamId & 0xFF,
-          (ms >> 24) & 0xFF,
-          (ms >> 16) & 0xFF,
-          (ms >> 8) & 0xFF,
-          ms & 0xFF
+            (streamId >> 24) & 0xFF,
+            (streamId >> 16) & 0xFF,
+            (streamId >> 8) & 0xFF,
+            streamId & 0xFF,
+            (ms >> 24) & 0xFF,
+            (ms >> 16) & 0xFF,
+            (ms >> 8) & 0xFF,
+            ms & 0xFF
         ]));
       }
     },
@@ -196,10 +198,6 @@ var BaseTransport = (function BaseTransportClosure() {
     }
   });
 
-  return BaseTransport;
-})();
-
-var NetStream = (function NetStreamClosure() {
   var DEFAULT_BUFFER_LENGTH = 100; // ms
 
   function NetStream(transport, streamId) {
@@ -231,36 +229,29 @@ var NetStream = (function NetStreamClosure() {
     _push: {
       value: function (message) {
         switch (message.typeId) {
-        case 8:
-        case 9:
-          if (this.ondata) {
-            this.ondata(message);
-          }
-          break;
-        case 18:
-        case 20:
-          var args = [];
-          var ba = ByteArray(message.data);
-          ba.objectEncoding = 0;
-          while (ba.position < ba.length) {
-            args.push(ba.readObject());
-          }
-          if (message.typeId === 18 && this.onscriptdata) {
-            this.onscriptdata.apply(this, args);
-          }
-          if (message.typeId === 20 && this.oncallback) {
-            this.oncallback.apply(this, args);
-          }
-          break;
+          case 8:
+          case 9:
+            if (this.ondata) {
+              this.ondata(message);
+            }
+            break;
+          case 18:
+          case 20:
+            var args = [];
+            var ba = new ByteArray(message.data);
+            ba.objectEncoding = 0;
+            while (ba.position < ba.length) {
+              args.push(ba.readObject());
+            }
+            if (message.typeId === 18 && this.onscriptdata) {
+              this.onscriptdata.apply(this, args);
+            }
+            if (message.typeId === 20 && this.oncallback) {
+              this.oncallback.apply(this, args);
+            }
+            break;
         }
       }
     }
   });
-
-  return NetStream;
-})();
-
-if (typeof global !== 'undefined') {
-  global.NetStream = NetStream;
-  global.BaseTransport = BaseTransport;
 }

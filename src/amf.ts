@@ -1,7 +1,5 @@
-/* -*- Mode: js; js-indent-level: 2; indent-tabs-mode: nil; tab-width: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /*
- * Copyright 2013 Mozilla Foundation
+ * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +14,11 @@
  * limitations under the License.
  */
 
+
 // part of the Mozilla Shumway project
 
-var AMFUtils = (function AMFUtilsClosure() {
+///<reference path='references.ts' />
+module Shumway {
   var AMF0_NUMBER_MARKER = 0x00;
   var AMF0_BOOLEAN_MARKER = 0x01;
   var AMF0_STRING_MARKER = 0x02;
@@ -161,26 +161,26 @@ var AMFUtils = (function AMFUtilsClosure() {
       case AMF0_UNDEFINED_MARKER:
         return undefined;
       case AMF0_ECMA_ARRAY_MARKER:
-        var obj = [];
-        obj.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
+        var arr = [];
+        arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
                      (ba.readByte() << 8) | ba.readByte();
         while (true) {
           var key = readString(ba);
           if (!key.length) break;
-          setAvmProperty(obj, key, this.read(ba));
+          setAvmProperty(arr, key, this.read(ba));
         }
         if (ba.readByte() !== AMF0_OBJECT_END_MARKER) {
           throw 'AMF0 End marker is not found';
         }
-        return obj;
+        return arr;
       case AMF0_STRICT_ARRAY_MARKER:
-        var obj = [];
-        obj.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
+        var arr = [];
+        arr.length = (ba.readByte() << 24) | (ba.readByte() << 16) |
                      (ba.readByte() << 8) | ba.readByte();
-        for (var i = 0; i < obj.length; i++) {
-          obj[i] = this.read(ba);
+        for (var i = 0; i < arr.length; i++) {
+          arr[i] = this.read(ba);
         }
-        return obj;
+        return arr;
       case AMF0_AVMPLUS_MARKER:
         return readAmf3Data(ba, {});
       default:
@@ -343,19 +343,19 @@ var AMFUtils = (function AMFUtilsClosure() {
       if ((u29o & 1) === 0) {
         return caches.objectsCache[u29o >> 1];
       }
-      var obj = [];
+      var arr = [];
       var densePortionLength = u29o >> 1;
       while (true) {
         var key = readUTF8vr(ba, caches);
         if (!key.length) break;        
         var value = readAmf3Data(ba, caches);
-        setAvmProperty(obj, key, value);
+        setAvmProperty(arr, key, value);
       }
       for (var i = 0; i < densePortionLength; i++) {
         var value = readAmf3Data(ba, caches);
-        setAvmProperty(obj, i, value);
+        setAvmProperty(arr, i, value);
       }
-      return obj;
+      return arr;
     default:
       throw 'AMF3 Unknown marker ' + marker; 
     }
@@ -411,7 +411,7 @@ var AMFUtils = (function AMFUtilsClosure() {
           }
           writeUTF8vr(ba, i, caches);
           writeAmf3Data(ba, value, caches);
-        });
+        }, null);
         writeUTF8vr(ba, '', caches);
         for (var j = 0; j < densePortionLength; j++) {
           writeAmf3Data(ba, obj[j], caches);
@@ -433,7 +433,7 @@ var AMFUtils = (function AMFUtilsClosure() {
         forEachPublicProperty(obj, function (i, value) {
           writeUTF8vr(ba, i, caches);
           writeAmf3Data(ba, value, caches);
-        });
+        }, null);
         writeUTF8vr(ba, '', caches);
       }
       return;
@@ -449,9 +449,5 @@ var AMFUtils = (function AMFUtilsClosure() {
     }
   };
 
-  return [amf0, null, null, amf3];
-})();
-
-if (typeof global !== 'undefined') {
-  global.AMFUtils = AMFUtils;
+  export var AMFUtils = [amf0, null, null, amf3];
 }

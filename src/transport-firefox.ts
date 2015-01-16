@@ -1,7 +1,5 @@
-/* -*- Mode: js; js-indent-level: 2; indent-tabs-mode: nil; tab-width: 2 -*- */
-/* vim: set shiftwidth=2 tabstop=2 autoindent cindent expandtab: */
 /*
- * Copyright 2013 Mozilla Foundation
+ * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +14,13 @@
  * limitations under the License.
  */
 
-var RtmpTransport = (function RtmpTransportClosure() {
+///<reference path='references.ts' />
+module RtmpJs.Browser {
+  import RELEASE = Shumway.RELEASE;
+
   var DEFAULT_RTMP_PORT = 1935;
 
-  function RtmpTransport(connectionSettings) {
+  export function RtmpTransport(connectionSettings) {
     BaseTransport.call(this);
 
     if (typeof connectionSettings === 'string') {
@@ -34,7 +35,7 @@ var RtmpTransport = (function RtmpTransportClosure() {
   RtmpTransport.prototype = Object.create(BaseTransport.prototype, {
     connect: {
       value: function (properties) {
-        var TCPSocket = navigator.mozTCPSocket;
+        var TCPSocket = (<any>navigator).mozTCPSocket;
         var channel = this.initChannel(properties);
 
         var writeQueue = [], socketError = false;
@@ -89,18 +90,14 @@ var RtmpTransport = (function RtmpTransportClosure() {
     }
   });
 
-  return RtmpTransport;
-})();
-
-/*
- * RtmptTransport uses systemXHR to send HTTP requests.
- * See https://developer.mozilla.org/en-US/docs/DOM/XMLHttpRequest#XMLHttpRequest%28%29 and
- * https://github.com/mozilla-b2g/gaia/blob/master/apps/email/README.md#running-in-firefox
- *
- * Spec at http://red5.electroteque.org/dev/doc/html/rtmpt.html
- */
-var RtmptTransport = (function RtmpTransportClosure() {
-  function RtmptTransport(connectionSettings) {
+  /*
+   * RtmptTransport uses systemXHR to send HTTP requests.
+   * See https://developer.mozilla.org/en-US/docs/DOM/XMLHttpRequest#XMLHttpRequest%28%29 and
+   * https://github.com/mozilla-b2g/gaia/blob/master/apps/email/README.md#running-in-firefox
+   *
+   * Spec at http://red5.electroteque.org/dev/doc/html/rtmpt.html
+   */
+  export function RtmptTransport(connectionSettings) {
     BaseTransport.call(this);
 
     var host = connectionSettings.host || 'localhost';
@@ -120,7 +117,7 @@ var RtmptTransport = (function RtmpTransportClosure() {
   function post(path, data, onload) {
     data || (data = emptyPostData);
 
-    var xhr = new XMLHttpRequest({mozSystem: true});
+    var xhr = new (<any>XMLHttpRequest)({mozSystem: true});
     xhr.open('POST', path, true);
     xhr.responseType = 'arraybuffer';
     xhr.setRequestHeader('Content-Type', 'application/x-fcs');
@@ -205,6 +202,5 @@ var RtmptTransport = (function RtmpTransportClosure() {
     }
   });
 
-  return RtmptTransport;
-})();
+}
 

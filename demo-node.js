@@ -1,4 +1,4 @@
-var r = require('./src/transport-node.js');
+var r = require('./build/ts/rtmp-node.js').RtmpJs.Node;
 
 var props = {
           app: 'oflaDemo',
@@ -14,8 +14,8 @@ var props = {
         };
 
 
-var rtmp = new r.RtmpTransport({host:'localhost', port:1935});
-//var rtmp = new r.RtmptTransport({host:'localhost', port:5080});
+//var rtmp = new r.RtmpTransport({host:'localhost', port:1935});
+var rtmp = new r.RtmptTransport({host:'localhost', port:5080});
 
 rtmp.onresponse = function (e) {
   console.log('#response');
