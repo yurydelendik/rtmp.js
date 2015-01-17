@@ -304,7 +304,7 @@ module RtmpJs.MP4 {
             default:
               throw new Error('unsupported video codec: ' + videoPacket.codecDescription);
             case VP6_VIDEO_CODEC_ID:
-              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) { // keyframe
+              if (videoPacket.frameType === 1 && this.cachedPackets !== 0 && this.state !== 0) { // keyframe
                 this._chunk();
               }
               break; // supported
@@ -312,7 +312,7 @@ module RtmpJs.MP4 {
               if (videoPacket.packetType !== 0 && this.state === 0) {
                 this.generateHeader();
               }
-              if (videoPacket.frameType === 1 && this.cachedPackets !== 0) { // keyframe
+              if (videoPacket.frameType === 1 && this.cachedPackets !== 0 && this.state !== 0) { // keyframe
                 this._chunk();
               }
               break;
@@ -324,7 +324,7 @@ module RtmpJs.MP4 {
           throw new Error('unknown packet type: ' + type);
       }
 
-      if (this.cachedPackets >= MAX_PACKETS_IN_CHUNK) {
+      if (this.cachedPackets >= MAX_PACKETS_IN_CHUNK && this.state !== 0) {
         this._chunk();
       }
     }
@@ -336,6 +336,18 @@ module RtmpJs.MP4 {
     }
 
     generateHeader() {
+      for (var i = 0; i < this.tracks.length; i++) {
+        var trackInfo = this.tracks[i];
+        switch (trackInfo.type) {
+          case 'mp4a':
+          case 'avc1':
+            if (trackInfo.cache.length === 0) {
+              return; // not enough data, waiting more
+            }
+            break;
+        }
+      }
+
       var ftype = hex('000000206674797069736F6D0000020069736F6D69736F32617663316D703431');
 
       var metadata = this.metadata;
@@ -347,7 +359,8 @@ module RtmpJs.MP4 {
         var isAudio;
         switch (trackInfo.type) {
           case 'mp4a':
-            var audioSpecificConfig = trackInfo.cache[0].packet.data;
+            var audioSpecificConfig = (trackInfo.cache.shift()).packet.data;
+            this.cachedPackets--;
             codecInfo = tag('mp4a', [
               hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000'),
               tag('esds', [hex('0000000003808080'), 32 + audioSpecificConfig.length, hex('00020004808080'),
@@ -363,7 +376,8 @@ module RtmpJs.MP4 {
             isAudio = true;
             break;
           case 'avc1':
-            var avcC = trackInfo.cache[0].packet.data;
+            var avcC = (trackInfo.cache.shift()).packet.data;
+            this.cachedPackets--;
             avcC[5] |= 0xE0; // !!! SPS has to have that
             codecInfo = tag('avc1', [
               hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
@@ -412,10 +426,8 @@ module RtmpJs.MP4 {
           ]);
         }
 
-        trackInfo.cache = [];
         traks.push(trak);
       }
-      this.cachedPackets = 0;
 
       var mvexAndUdat = hex('000000486D7665780000002074726578000000000000000100000001000000000000000000000000000000207472657800000000000000020000000100000000000000000000000000000062756474610000005A6D657461000000000000002168646C7200000000000000006D6469726170706C0000000000000000000000002D696C737400000025A9746F6F0000001D6461746100000001000000004C61766635342E36332E313034');
       var moovHeader = [hex('0000006C6D766864000000000000000000000000000003E80000000000010000010000000000000000000000000100000000000000000000000000000001000000000000000000000000000040000000000000000000000000000000000000000000000000000000'), encodeInt32(this.tracks.length)];
