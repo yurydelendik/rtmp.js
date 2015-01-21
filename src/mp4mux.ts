@@ -16,73 +16,13 @@
 
 ///<reference path='references.ts' />
 module RtmpJs.MP4 {
-  function hex(s: string) {
+  function hex(s: string): Uint8Array {
     var len = s.length >> 1;
     var arr = new Uint8Array(len);
     for (var i = 0; i < len; i++) {
       arr[i] = parseInt(s.substr(i * 2, 2), 16);
     }
     return arr;
-  }
-
-  function flatten(arr: any): Uint8Array {
-    if (arr instanceof Uint8Array) {
-      return arr;
-    }
-    if (typeof arr === 'number') {
-      return new Uint8Array([arr]);
-    }
-    if (typeof arr === 'string') {
-      var result = new Uint8Array(arr.length);
-      for (var i = 0; i < result.length; i++) {
-        result[i] = arr.charCodeAt(i) & 255;
-      }
-      return result;
-    }
-    arr = arr.map(flatten);
-    var len = 0;
-    arr.forEach(function (i) {
-      len += i.length;
-    });
-    var result = new Uint8Array(len);
-    var pos = 0;
-    arr.forEach(function (i) {
-      result.set(i, pos);
-      pos += i.length;
-    });
-    return result;
-  }
-
-  function encodeInt32(n: number): Uint8Array {
-    return new Uint8Array([(n >> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255]);
-  }
-
-  function encodeUint16(n: number): Uint8Array {
-    return new Uint8Array([(n >> 8) & 255, n & 255]);
-  }
-
-  function encodeFloat(n: number): Uint8Array {
-    return encodeInt32(n * 65536);
-  }
-
-  function encodeFloat16(n: number): Uint8Array {
-    return encodeUint16(n * 256);
-  }
-
-  function encodeLang(s: string): Uint8Array {
-    return encodeUint16(((s.charCodeAt(0) & 0x1F) << 10) | ((s.charCodeAt(1) & 0x1F) << 5) | (s.charCodeAt(2) & 0x1F));
-  }
-
-  function tag(name: string, data: any): Uint8Array {
-    if (name.length !== 4) {
-      throw new Error('bad tag name: ' + name);
-    }
-    data = flatten(data);
-    var len = 8 + data.length;
-    if (len > 0x7FFFFFFF) {
-      throw new Error('bad tag length');
-    }
-    return flatten([encodeInt32(len), name, data]);
   }
 
   var SOUNDRATES = [5500, 11025, 22050, 44100];
@@ -348,169 +288,206 @@ module RtmpJs.MP4 {
         }
       }
 
-      var ftype = hex('000000206674797069736F6D0000020069736F6D69736F32617663316D703431');
+
+      var ftype = new Iso.FileTypeBox('isom', 0x00000200, ['isom', 'iso2', 'avc1', 'mp41']);
 
       var metadata = this.metadata;
-      var codecInfo: any;
-      var traks = [];
+      var audioDataReferenceIndex = 1, videoDataReferenceIndex = 1;
+      var traks: Iso.TrackBox[] = [];
       for (var i = 0; i < this.tracks.length; i++) {
-        var trak;
         var trackInfo = this.tracks[i], trackId = i + 1;
         var isAudio;
+        var sampleEntry: Iso.SampleEntry;
         switch (trackInfo.type) {
           case 'mp4a':
             var audioSpecificConfig = (trackInfo.cache.shift()).packet.data;
             this.cachedPackets--;
-            codecInfo = tag('mp4a', [
-              hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000'),
-              tag('esds', [hex('0000000003808080'), 32 + audioSpecificConfig.length, hex('00020004808080'),
-                  18 + audioSpecificConfig.length, hex('40150000000000FA000000000005808080'), audioSpecificConfig.length,
-                audioSpecificConfig, hex('068080800102')])
-            ]);
+            sampleEntry = new Iso.AudioSampleEntry('mp4a', audioDataReferenceIndex, trackInfo.channels, 16 /* sampleSize */, trackInfo.samplerate);
+
+            var esdsData = new Uint8Array(41 + audioSpecificConfig.length);
+            esdsData.set(hex('0000000003808080'), 0);
+            esdsData[8] = 32 + audioSpecificConfig.length;
+            esdsData.set(hex('00020004808080'), 9);
+            esdsData[16] = 18 + audioSpecificConfig.length;
+            esdsData.set(hex('40150000000000FA000000000005808080'), 17);
+            esdsData[34] = audioSpecificConfig.length;
+            esdsData.set(audioSpecificConfig, 35);
+            esdsData.set(hex('068080800102'), 35 + audioSpecificConfig.length);
+            (<Iso.AudioSampleEntry>sampleEntry).otherBoxes = [
+              new Iso.RawTag('esds', esdsData)
+            ];
             isAudio = true;
             break;
           case 'mp3':
-            codecInfo = tag('.mp3', [
-              hex('00000000000000010000000000000000'), encodeUint16(trackInfo.channels), hex('00100000'), encodeInt32(trackInfo.samplerate), hex('0000')
-            ]);
+            sampleEntry = new Iso.AudioSampleEntry('.mp3', audioDataReferenceIndex, trackInfo.channels, 16 /* sampleSize */, trackInfo.samplerate);
             isAudio = true;
             break;
           case 'avc1':
             var avcC = (trackInfo.cache.shift()).packet.data;
             this.cachedPackets--;
             avcC[5] |= 0xE0; // !!! SPS has to have that
-            codecInfo = tag('avc1', [
-              hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
-              tag('avcC', avcC)
-            ]);
+            sampleEntry = new Iso.VideoSampleEntry('avc1', videoDataReferenceIndex, trackInfo.width, trackInfo.height);
+            (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
+              new Iso.RawTag('avcC', avcC)
+            ];
             isAudio = false;
             break;
           case 'vp6f':
-            codecInfo = tag('VP6F', [
-              hex('000000000000000100000000000000000000000000000000'), encodeUint16(trackInfo.width), encodeUint16(trackInfo.height), hex('004800000048000000000000000100000000000000000000000000000000000000000000000000000000000000000018FFFF'),
-              tag('glbl', [hex('00')])
-            ]);
+            sampleEntry = new Iso.VideoSampleEntry('VP6F', videoDataReferenceIndex, trackInfo.width, trackInfo.height);
+            (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
+              new Iso.RawTag('glbl', hex('00'))
+            ];
             isAudio = false;
             break;
           default:
             throw new Error('not supported track type');
         }
 
+        var trak;
         if (isAudio) {
-          trak = tag('trak', [
-            hex('0000005C746B68640000000F0000000000000000'), encodeInt32(trackId), hex('00000000FFFFFFFF00000000000000000000'), encodeUint16(i /*altgroup*/), encodeFloat16(1.0 /*volume*/), hex('0000000100000000000000000000000000000001000000000000000000000000000040000000'), encodeFloat(0/*width*/), encodeFloat(0/*height*/),
-            tag('mdia', [
-              hex('000000206D6468640000000000000000000000000000'), encodeUint16(trackInfo.timescale), hex('FFFFFFFF'), encodeLang(trackInfo.language), hex('00000000002D68646C720000000000000000736F756E000000000000000000000000536F756E6448616E646C657200'),
-              tag('minf', [
-                hex('00000010736D686400000000000000000000002464696E660000001C6472656600000000000000010000000C75726C2000000001'),
-                tag('stbl', [
-                  tag('stsd', [hex('0000000000000001'), codecInfo]),
-                  hex('0000001073747473000000000000000000000010737473630000000000000000000000147374737A000000000000000000000000000000107374636F0000000000000000')
-                ])
-              ])
-            ])
-          ]);
+          trak = new Iso.TrackBox(
+            new Iso.TrackHeaderBox(0x00000F, trackId, -1, 0 /*width*/, 0 /*height*/, 1.0, i),
+            new Iso.MediaBox(
+              new Iso.MediaHeaderBox(trackInfo.timescale, -1, trackInfo.language),
+              new Iso.HandlerBox('soun', 'SoundHandler'),
+              new Iso.MediaInformationBox(
+                new Iso.SoundMediaHeaderBox(),
+                new Iso.DataInformationBox(
+                  new Iso.DataReferenceBox([new Iso.DataEntryUrlBox(Iso.SELF_CONTAINED_DATA_REFERENCE_FLAG)])),
+                new Iso.SampleTableBox(
+                  new Iso.SampleDescriptionBox([sampleEntry]),
+                  new Iso.RawTag('stts', hex('0000000000000000')),
+                  new Iso.RawTag('stsc', hex('0000000000000000')),
+                  new Iso.RawTag('stsz', hex('000000000000000000000000')),
+                  new Iso.RawTag('stco', hex('0000000000000000'))
+                )
+              )
+            )
+          );
         } else { // isVideo
-          trak = tag('trak', [
-            hex('0000005C746B68640000000F0000000000000000'), encodeInt32(trackId), hex('00000000FFFFFFFF00000000000000000000'), encodeUint16(i /*altgroup*/), encodeFloat16(0 /*volume*/), hex('0000000100000000000000000000000000000001000000000000000000000000000040000000'), encodeFloat(trackInfo.width), encodeFloat(trackInfo.height),
-            tag('mdia', [
-              hex('000000206D6468640000000000000000000000000000'), encodeUint16(trackInfo.timescale), hex('FFFFFFFF'), encodeLang(trackInfo.language), hex('00000000002D68646C72000000000000000076696465000000000000000000000000566964656F48616E646C657200'),
-              tag('minf', [
-                hex('00000014766D68640000000100000000000000000000002464696E660000001C6472656600000000000000010000000C75726C2000000001'),
-                tag('stbl', [
-                  tag('stsd', [hex('0000000000000001'), codecInfo]),
-                  hex('0000001073747473000000000000000000000010737473630000000000000000000000147374737A000000000000000000000000000000107374636F0000000000000000')
-                ])
-              ])
-            ])
-          ]);
+          trak = new Iso.TrackBox(
+            new Iso.TrackHeaderBox(0x00000F, trackId, -1, trackInfo.width, trackInfo.height, 0 /* volume */, i),
+            new Iso.MediaBox(
+              new Iso.MediaHeaderBox(trackInfo.timescale, -1, trackInfo.language),
+              new Iso.HandlerBox('vide', 'VideoHandler'),
+              new Iso.MediaInformationBox(
+                new Iso.VideoMediaHeaderBox(),
+                new Iso.DataInformationBox(
+                  new Iso.DataReferenceBox([new Iso.DataEntryUrlBox(Iso.SELF_CONTAINED_DATA_REFERENCE_FLAG)])),
+                new Iso.SampleTableBox(
+                  new Iso.SampleDescriptionBox([sampleEntry]),
+                  new Iso.RawTag('stts', hex('0000000000000000')),
+                  new Iso.RawTag('stsc', hex('0000000000000000')),
+                  new Iso.RawTag('stsz', hex('000000000000000000000000')),
+                  new Iso.RawTag('stco', hex('0000000000000000'))
+                )
+              )
+            )
+          );
         }
-
         traks.push(trak);
       }
 
-      var mvexAndUdat = hex('000000486D7665780000002074726578000000000000000100000001000000000000000000000000000000207472657800000000000000020000000100000000000000000000000000000062756474610000005A6D657461000000000000002168646C7200000000000000006D6469726170706C0000000000000000000000002D696C737400000025A9746F6F0000001D6461746100000001000000004C61766635342E36332E313034');
-      var moovHeader = [hex('0000006C6D766864000000000000000000000000000003E80000000000010000010000000000000000000000000100000000000000000000000000000001000000000000000000000000000040000000000000000000000000000000000000000000000000000000'), encodeInt32(this.tracks.length)];
-      var moov = tag('moov', [moovHeader, traks, mvexAndUdat]);
-      var header = flatten([ftype, moov]);
+      var mvex = new Iso.MovieExtendsBox(null, [
+        new Iso.TrackExtendsBox(1, 1, 0, 0, 0),
+        new Iso.TrackExtendsBox(2, 1, 0, 0, 0)
+      ], null);
+      var udat = new Iso.BoxContainerBox('udat', [
+        new Iso.MetaBox(
+          new Iso.RawTag('hdlr', hex('00000000000000006D6469726170706C000000000000000000')), // notice weird stuff in reserved field
+          [new Iso.RawTag('ilst', hex('00000025A9746F6F0000001D6461746100000001000000004C61766635342E36332E313034'))]
+        )
+      ]);
+      var mvhd = new Iso.MovieHeaderBox(1000, 0 /* unknown duration */, this.tracks.length);
+      var moov = new Iso.MovieBox(mvhd, traks, mvex, udat);
+
+      var ftypeSize = ftype.layout(0);
+      var moovSize = moov.layout(ftypeSize);
+
+      var header = new Uint8Array(ftypeSize + moovSize);
+      ftype.write(header);
+      moov.write(header);
+
       this.ondata(header);
       this.filePos += header.length;
       this.state = 1;
     }
 
     _chunk() {
-      var moofOffset = flatten([hex('00000000'), encodeInt32(this.filePos)]); // TODO
-      var trafParts = [], tdatParts = [], tfdts = [];
+      var tdatParts: Uint8Array[] = [];
+      var tdatPosition: number = 0;
+      var trafs: Iso.TrackFragmentBox[] = [];
+      var trafDataStarts: number[] = [];
 
-      var moofHeader = flatten([hex('000000106D66686400000000'), encodeInt32(++this.chunkIndex)]);
-      var moof = [moofHeader];
-      var moofLength = 8 + moofHeader.length + /* trafs len */ +8;
+      var moofHeader = new Iso.MovieFragmentHeaderBox(++this.chunkIndex);
       for (var i = 0; i < this.tracks.length; i++) {
-        var trak;
         var trackInfo = this.tracks[i], trackId = i + 1;
         if (trackInfo.cache.length === 0) {
           continue;
         }
-        var currentTrackTime = (trackInfo.cache[0].timestamp * trackInfo.timescale / 1000) | 0;
-        //tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(currentTrackTime)]));
-        tfdts.push(tag('tfdt', [hex('00000000'), encodeInt32(trackInfo.cachedDuration)]));
+
+        //var currentTrackTime = (trackInfo.cache[0].timestamp * trackInfo.timescale / 1000) | 0;
+        //var tfdt = new Iso.TrackFragmentBaseMediaDecodeTimeBox(currentTrackTime);
+        var tfdt = new Iso.TrackFragmentBaseMediaDecodeTimeBox(trackInfo.cachedDuration);
+        var tfhd: Iso.TrackFragmentHeaderBox;
+        var trun: Iso.TrackRunBox;
+        var trunSamples: Iso.TrackRunSample[];
+
         var totalDuration = 0;
+        trafDataStarts.push(tdatPosition);
         switch (trackInfo.type) {
           case 'mp4a':
           case 'mp3':
-            var trun1head = flatten([hex('00000305'), encodeInt32(trackInfo.cache.length)]);
-            var trun1tail: any = [hex('02000000')];
-            var tdat1: any = [];
+            trunSamples = [];
             for (var j = 0; j < trackInfo.cache.length; j++) {
               var audioPacket: AudioPacket = trackInfo.cache[j].packet;
               var audioFrameDuration = (audioPacket.samples / trackInfo.samplerate * trackInfo.timescale) | 0;
-              tdat1.push(audioPacket.data);
-              trun1tail.push(encodeInt32(audioFrameDuration), encodeInt32(audioPacket.data.length));
+              tdatParts.push(audioPacket.data);
+              tdatPosition += audioPacket.data.length;
+              trunSamples.push({duration: audioFrameDuration, size: audioPacket.data.length});
               totalDuration += audioFrameDuration;
             }
-            trun1tail = flatten(trun1tail);
-            tdat1 = flatten(tdat1);
-            var tfhd1 = tag('tfhd', [hex('00020038'), encodeInt32(trackId), hex('000004000000001A02000000')]);
-            moofLength += 8 + tfhd1.length + 8 + trun1head.length + /* tfdt len */ 16 + 4 + trun1tail.length;
-            trafParts.push({tfhd: tfhd1, trunHead: trun1head, trunTail: trun1tail});
-            tdatParts.push(tdat1);
+            tfhd = new Iso.TrackFragmentHeaderBox(0x020038, trackId, 0 /* offset */, 0 /* index */, 0x00000400 /* ? */, 0x0000001A /* sample size ? */, 0x02000000);
+            trun = new Iso.TrackRunBox(0x000305, trunSamples, 0, 0x02000000);
             break;
           case 'avc1':
           case 'vp6f':
             var videoFrameDuration = (trackInfo.timescale / trackInfo.framerate) | 0;
-            var firstFrameFlags = trackInfo.cache[0].packet.frameType !== 1 ? hex('01010000') : hex('02000000');
-            var trun2head = flatten([hex('00000A05'), encodeInt32(trackInfo.cache.length)]);
-            var trun2tail: any = [firstFrameFlags];
-            var tdat2: any = [];
+            var firstFrameFlags = trackInfo.cache[0].packet.frameType !== 1 ? 0x01010000 : 0x02000000;
+            trunSamples = [];
             totalDuration = trackInfo.cache.length * videoFrameDuration;
             for (var j = 0; j < trackInfo.cache.length; j++) {
               var videoPacket: VideoPacket = trackInfo.cache[j].packet;
-              tdat2.push(videoPacket.data);
-              trun2tail.push(encodeInt32(videoPacket.data.length), encodeInt32(videoPacket.compositionTime));
+              tdatParts.push(videoPacket.data);
+              tdatPosition += videoPacket.data.length;
+              trunSamples.push({size: videoPacket.data.length, compositionTimeOffset: videoPacket.compositionTime});
             }
-            trun2tail = flatten(trun2tail);
-            tdat2 = flatten(tdat2);
-            var tfhd2 = tag('tfhd', [hex('00020038'), encodeInt32(trackId), encodeInt32(videoFrameDuration), hex('0000127B01010000')]);
-            moofLength += 8 + tfhd2.length + 8 + trun2head.length + /* tfdt len */ 16 + 4 + trun2tail.length;
-            trafParts.push({tfhd: tfhd2, trunHead: trun2head, trunTail: trun2tail});
-            tdatParts.push(tdat2);
+            tfhd = new Iso.TrackFragmentHeaderBox(0x020038, trackId, 0 /* offset */, 0 /* index */, videoFrameDuration, 0x0000127B /* sample size ? */, 0x01010000);
+            trun = new Iso.TrackRunBox(0x000A05, trunSamples, 0, firstFrameFlags);
             break;
           default:
             throw new Error('unsupported codec');
         }
         trackInfo.cachedDuration += totalDuration;
         trackInfo.cache = [];
+
+        var traf = new Iso.TrackFragmentBox(tfhd, tfdt, trun);
+        trafs.push(traf);
+      }
+      var moof = new Iso.MovieFragmentBox(moofHeader, trafs);
+      var moofSize = moof.layout(0);
+      var mdat = new Iso.MediaDataBox(tdatParts);
+      var mdatSize = mdat.layout(moofSize);
+
+      var tdatOffset = moofSize + 8 /* 'mdat' header size */;
+      for (var i = 0; i < trafs.length; i++) {
+        trafs[i].run.dataOffset = tdatOffset + trafDataStarts[i];
       }
 
-      var moofParts = [moofHeader], tdatOffset = moofLength;
-      for (var i = 0; i < trafParts.length; i++) {
-        var traf = tag('traf', [trafParts[i].tfhd, tfdts[i],
-          tag('trun', [trafParts[i].trunHead, encodeInt32(tdatOffset), trafParts[i].trunTail]) ]);
-        moofParts.push(traf);
-        tdatOffset += tdatParts[i].length;
-      }
+      var chunk = new Uint8Array(moofSize + mdatSize);
+      moof.write(chunk);
+      mdat.write(chunk);
 
-      var chunk = flatten([tag('moof', moofParts), tag('mdat', tdatParts)]);
       this.ondata(chunk);
       this.filePos += chunk.length;
       this.cachedPackets = 0;
