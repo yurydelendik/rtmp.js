@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-///<reference path='references.ts' />
 module RtmpJs.MP4 {
   function hex(s: string): Uint8Array {
     var len = s.length >> 1;

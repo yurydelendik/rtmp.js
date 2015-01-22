@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-
-///<reference path='references.ts' />
 module RtmpJs.Node {
   declare function require(name: string): any;
 

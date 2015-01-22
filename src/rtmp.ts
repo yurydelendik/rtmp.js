@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-///<reference path='references.ts' />
 module RtmpJs {
   var MAX_CHUNKED_CHANNEL_BUFFER = 0x80000;
   var RANDOM_DATA_SIZE = 1536;

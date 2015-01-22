@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-///<reference path='references.ts' />
 module RtmpJs {
   import flash = Shumway.AVM2.AS.flash;
 

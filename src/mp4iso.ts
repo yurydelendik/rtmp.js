@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-///<reference path='references.ts' />
 module RtmpJs.MP4.Iso {
   import utf8decode = Shumway.StringUtilities.utf8decode;
 

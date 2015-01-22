@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-///<reference path='references.ts' />
 module RtmpJs.Browser {
   var DEFAULT_RTMP_PORT = 1935;
   var COMBINE_RTMPT_DATA = true;
