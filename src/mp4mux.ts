@@ -144,59 +144,59 @@ module RtmpJs.MP4 {
     var tracks: MP4Track[] = [];
     var audioTrackId = -1;
     var videoTrackId = -1;
-    var duration = +metadata.duration;
+    var duration = +metadata.asGetPublicProperty('duration');
 
-    if (metadata.trackinfo) {
+    if (metadata.asGetPublicProperty('trackinfo')) {
       // Not in the Adobe's references, red5 specific?
-      for (var i = 0; i < metadata.trackinfo.length; i++) {
-        var info = metadata.trackinfo[i];
+      for (var i = 0; i < metadata.asGetPublicProperty('trackinfo').length; i++) {
+        var info = metadata.asGetPublicProperty('trackinfo')[i];
         var track: MP4Track = {
-          language: info.language,
-          type: info.sampledescription[0].sampletype,
-          timescale: info.timescale,
+          language: info.asGetPublicProperty('language'),
+          type: info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype'),
+          timescale: info.asGetPublicProperty('timescale'),
           cache: [],
           cachedDuration: 0
         };
-        if (info.sampledescription[0].sampletype === metadata.audiocodecid) {
+        if (info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype') === metadata.asGetPublicProperty('audiocodecid')) {
           audioTrackId = i;
-          track.samplerate = +metadata.audiosamplerate;
-          track.channels = +metadata.audiochannels;
-        } else if (info.sampledescription[0].sampletype === metadata.videocodecid) {
+          track.samplerate = +metadata.asGetPublicProperty('audiosamplerate');
+          track.channels = +metadata.asGetPublicProperty('audiochannels');
+        } else if (info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype')  === metadata.asGetPublicProperty('videocodecid')) {
           videoTrackId = i;
-          track.framerate = +metadata.videoframerate;
-          track.width = +metadata.width;
-          track.height = +metadata.height;
+          track.framerate = +metadata.asGetPublicProperty('videoframerate');
+          track.width = +metadata.asGetPublicProperty('width');
+          track.height = +metadata.asGetPublicProperty('height');
         }
         tracks.push(track);
       }
     } else {
-      if (metadata.audiocodecid) {
-        if (metadata.audiocodecid !== 2) {
-          throw new Error('unsupported audio codec: ' + metadata.audiocodec);
+      if (metadata.asGetPublicProperty('audiocodecid')) {
+        if (metadata.asGetPublicProperty('audiocodecid') !== 2) {
+          throw new Error('unsupported audio codec: ' + metadata.asGetPublicProperty('audiocodec'));
         }
         audioTrackId = tracks.length;
         tracks.push({
           language: "unk",
           type: "mp3",
-          timescale: +metadata.audiosamplerate || 44100,
-          samplerate: +metadata.audiosamplerate || 44100,
-          channels: +metadata.audiochannels || 2,
+          timescale: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
+          samplerate: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
+          channels: +metadata.asGetPublicProperty('audiochannels') || 2,
           cache: [],
           cachedDuration: 0
         });
       }
-      if (metadata.videocodecid) {
-        if (metadata.videocodecid !== 4) {
-          throw new Error('unsupported video codec: ' + metadata.videocodecid);
+      if (metadata.asGetPublicProperty('videocodecid')) {
+        if (metadata.asGetPublicProperty('videocodecid') !== 4) {
+          throw new Error('unsupported video codec: ' + metadata.asGetPublicProperty('videocodecid'));
         }
         videoTrackId = tracks.length;
         tracks.push({
           language: "unk",
           type: "vp6f",
           timescale: 10000,
-          framerate: +metadata.framerate,
-          width: +metadata.width,
-          height: +metadata.height,
+          framerate: +metadata.asGetPublicProperty('framerate'),
+          width: +metadata.asGetPublicProperty('width'),
+          height: +metadata.asGetPublicProperty('height'),
           cache: [],
           cachedDuration: 0
         });

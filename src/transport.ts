@@ -16,7 +16,7 @@
 
 ///<reference path='references.ts' />
 module RtmpJs {
-  import ByteArray = Shumway.AVM2.AS.flash.utils.ByteArray;
+  import flash = Shumway.AVM2.AS.flash;
 
   var TRANSPORT_ENCODING = 0;
 
@@ -79,7 +79,7 @@ module RtmpJs {
       var channel = new ChunkedChannel();
       var transport = this;
       channel.oncreated = function () {
-        var ba = new ByteArray();
+        var ba = new flash.utils.ByteArray();
         ba.objectEncoding = TRANSPORT_ENCODING;
         ba.writeObject('connect');
         ba.writeObject(CONNECT_TRANSACTION_ID);
@@ -89,7 +89,7 @@ module RtmpJs {
         channel.send(MAIN_CHUNKED_STREAM_ID, {
           streamId: DEFAULT_STREAM_ID,
           typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-          data: new Uint8Array(<any>ba)
+          data: new Uint8Array((<any> ba)._buffer, 0, (<any> ba).length)
         });
       };
       channel.onmessage = function (message: IChunkedStreamMessage) {
@@ -104,7 +104,9 @@ module RtmpJs {
 
         if (message.typeId === COMMAND_MESSAGE_AMF0_ID ||
           message.typeId === COMMAND_MESSAGE_AMF3_ID) {
-          var ba = new ByteArray(message.data);
+          var ba = new flash.utils.ByteArray();
+          ba.writeRawBytes(message.data);
+          ba.position = 0;
           ba.objectEncoding = message.typeId === COMMAND_MESSAGE_AMF0_ID ? 0 : 3;
           var commandName = ba.readObject();
           if (commandName === undefined) { // ??? not sure what specification says and what real stuff are
@@ -160,7 +162,7 @@ module RtmpJs {
     call(procedureName: string, transactionId: number, commandObject, args) {
       var channel = this.channel;
 
-      var ba = new ByteArray();
+      var ba = new flash.utils.ByteArray();
       ba.objectEncoding = TRANSPORT_ENCODING;
       ba.writeObject(procedureName);
       ba.writeObject(transactionId);
@@ -169,7 +171,7 @@ module RtmpJs {
       channel.send(MAIN_CHUNKED_STREAM_ID, {
         streamId: DEFAULT_STREAM_ID,
         typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-        data: new Uint8Array(<any>ba)
+        data: new Uint8Array((<any> ba)._buffer, 0, (<any> ba).length)
       });
     }
 
@@ -180,7 +182,7 @@ module RtmpJs {
     sendCommandOrResponse(commandName: string, transactionId: number, commandObject, response?) {
       var channel = this.channel;
 
-      var ba = new ByteArray();
+      var ba = new flash.utils.ByteArray();
       ba.writeByte(0); // ???
       ba.objectEncoding = 0; // TRANSPORT_ENCODING;
       ba.writeObject(commandName);
@@ -192,11 +194,11 @@ module RtmpJs {
       channel.send(MAIN_CHUNKED_STREAM_ID, {
         streamId: DEFAULT_STREAM_ID,
         typeId: COMMAND_MESSAGE_AMF3_ID,
-        data: new Uint8Array(<any>ba)
+        data: new Uint8Array((<any> ba)._buffer, 0, (<any> ba).length)
       });
 
       /*     // really weird that this does not work
-       var ba = new ByteArray();
+       var ba = new flash.utils.ByteArray();
        ba.objectEncoding = TRANSPORT_ENCODING;
        ba.writeObject('createStream');
        ba.writeObject(transactionId);
@@ -204,7 +206,7 @@ module RtmpJs {
        channel.send(MAIN_CHUNKED_STREAM_ID, {
        streamId: DEFAULT_STREAM_ID,
        typeId: TRANSPORT_ENCODING ? COMMAND_MESSAGE_AMF3_ID : COMMAND_MESSAGE_AMF0_ID,
-       data: new Uint8Array(ba)
+       data: new Uint8Array((<any> ba)._buffer, 0, (<any> ba).length)
        });
        */
     }
@@ -241,7 +243,7 @@ module RtmpJs {
 
   export interface INetStream {
     ondata: (data: INetStreamData) => void;
-    onscriptdata: (type: number, ...data: any[]) => void;
+    onscriptdata: (type: string, ...data: any[]) => void;
     oncallback: (...args: any[]) => void;
 
     play(name: string, start?: number, duration?: number, reset?: boolean);
@@ -252,7 +254,7 @@ module RtmpJs {
     streamId: number;
 
     ondata: (message: INetStreamData) => void;
-    onscriptdata: (type: number, ...data: any[]) => void;
+    onscriptdata: (type: string, ...data: any[]) => void;
     oncallback: (...args: any[]) => void;
 
     constructor(transport, streamId) {
@@ -261,7 +263,7 @@ module RtmpJs {
     }
 
     public play(name: string, start?: number, duration?: number, reset?: boolean) {
-      var ba = new ByteArray();
+      var ba = new flash.utils.ByteArray();
       ba.objectEncoding = TRANSPORT_ENCODING;
       ba.writeObject('play');
       ba.writeObject(0);
@@ -276,7 +278,7 @@ module RtmpJs {
       if (arguments.length > 3) {
         ba.writeObject(reset);
       }
-      this.transport._sendCommand(this.streamId, new Uint8Array(<any>ba));
+      this.transport._sendCommand(this.streamId, new Uint8Array((<any> ba)._buffer, 0, (<any> ba).length));
       // set the buffer, otherwise it will stop in ~15 sec
       this.transport._setBuffer(this.streamId, DEFAULT_BUFFER_LENGTH);
     }
@@ -292,7 +294,9 @@ module RtmpJs {
         case 18:
         case 20:
           var args = [];
-          var ba = new ByteArray(message.data);
+          var ba = new flash.utils.ByteArray();
+          ba.writeRawBytes(message.data);
+          ba.position = 0;
           ba.objectEncoding = 0;
           while (ba.position < ba.length) {
             args.push(ba.readObject());

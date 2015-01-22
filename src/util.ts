@@ -26,6 +26,11 @@ Object.defineProperty(Object.prototype, 'asSetPublicProperty', {
     this[name] = value;
   }
 });
+Object.defineProperty(Object.prototype, 'asGetPublicProperty', {
+  value: function (name) {
+    return this[name];
+  }
+});
 
 (function polyfillWeakMap() {
   if (typeof jsGlobal.WeakMap === 'function') {
@@ -92,9 +97,10 @@ module Shumway.AVM2.AS.flash.net {
 
 module Shumway.AVM2.AS.flash.utils {
   export class ByteArray {
-    constructor(a?) {
-      return <any>buildByteArray(a);
+    constructor() {
+      return <any>buildByteArray();
     }
+    public _buffer: ArrayBuffer;
     public length: number;
     public position: number;
     public objectEncoding: number;
@@ -102,16 +108,16 @@ module Shumway.AVM2.AS.flash.utils {
     public writeByte: (v: number) => void;
     public readObject: () => any;
     public writeObject: (obj: any) => void;
+    public writeRawBytes: (data: Uint8Array) => void;
   }
 
-  function buildByteArray(a?) {
+  function buildByteArray() {
     var result: any = [];
-    if (a) {
-      for (var i = 0; i < a.length; i++) {
-        result[i] = a[i];
-      }
-    }
     Object.defineProperties(result, {
+      _buffer: { get: function () {
+        return new Uint8Array(this).buffer;
+      }
+      },
       position: { value: 0, writable: true },
       objectEncoding: { value: 3, writable: true },
       readByte: { value: function () {
@@ -145,6 +151,13 @@ module Shumway.AVM2.AS.flash.utils {
           default:
             throw new Error("Object Encoding");
         }
+      }
+      },
+      writeRawBytes: { value: function (data: Uint8Array) {
+        for (var i = 0, p = this.position; i < data.length; i++) {
+          this[p++] = data[i];
+        }
+        this.position = p;
       }
       }
     });
