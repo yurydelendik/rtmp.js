@@ -310,4 +310,52 @@ module RtmpJs {
       }
     }
   }
+
+  export interface RtmpConnectionString {
+    protocol: string;
+    host: string;
+    port: number;
+    app: string;
+  }
+
+  export function parseConnectionString(s: string): RtmpConnectionString {
+    // The s has to have the following format:
+    //   protocol:[//host][:port]/appname[/instanceName]
+    var protocolSeparatorIndex = s.indexOf(':');
+    if (protocolSeparatorIndex < 0) {
+      return null; // no protocol
+    }
+    if (s[protocolSeparatorIndex + 1] !== '/') {
+      return null; // shall have '/' after protocol
+    }
+    var protocol = s.substring(0, protocolSeparatorIndex).toLocaleLowerCase();
+    if (protocol !== 'rtmp' && protocol !== 'rtmpt' && protocol !== 'rtmps' &&
+        protocol !== 'rtmpe' && protocol !== 'rtmpte' && protocol !== 'rtmfp') {
+      return null;
+    }
+    var host, port;
+    var appnameSeparator = protocolSeparatorIndex + 1;
+    if (s[protocolSeparatorIndex + 2] === '/') {
+      // has host
+      appnameSeparator = s.indexOf('/', protocolSeparatorIndex + 3);
+      if (appnameSeparator < 0) {
+        return undefined; // has host but no appname
+      }
+      var portSeparator = s.indexOf(':', protocolSeparatorIndex + 1);
+      if (portSeparator >= 0 && portSeparator < appnameSeparator) {
+        host = s.substring(protocolSeparatorIndex + 3, portSeparator);
+        port = +s.substring(portSeparator + 1, appnameSeparator);
+      } else {
+        host = s.substring(protocolSeparatorIndex + 3, appnameSeparator);
+      }
+    }
+    var app = s.substring(appnameSeparator);
+    return {
+      protocol: protocol,
+      host: host,
+      port: port,
+      app: app
+    };
+  }
+
 }
