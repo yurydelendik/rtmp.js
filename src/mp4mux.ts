@@ -160,6 +160,7 @@ module RtmpJs.MP4 {
     height?: number;
 
     initializationData?: Uint8Array[];
+    codec?: string;
   }
 
   interface MP4Metadata {
@@ -255,6 +256,10 @@ module RtmpJs.MP4 {
     private cachedPackets: number;
     private state: MP4MuxState;
     private chunkIndex: number;
+
+    oncodecinfo: (codecs: string[]) => void = function (codecs: string[]) {
+      //
+    };
 
     ondata: (data) => void = function (data) {
       throw new Error('MP4Mux.ondata is not set');
@@ -357,8 +362,7 @@ module RtmpJs.MP4 {
         }
       }
 
-      var ftype = new Iso.FileTypeBox('isom', 0x00000200, ['isom', 'iso2', 'avc1', 'mp41']);
-
+      var brands: string[] = ['isom'];
       var audioDataReferenceIndex = 1, videoDataReferenceIndex = 1;
       var traks: Iso.TrackBox[] = [];
       for (var i = 0; i < tracks.length; i++) {
@@ -382,10 +386,14 @@ module RtmpJs.MP4 {
             (<Iso.AudioSampleEntry>sampleEntry).otherBoxes = [
               new Iso.RawTag('esds', esdsData)
             ];
+            var objectType = (audioSpecificConfig[0] >> 3); // TODO 31
+            // mp4a.40.objectType
+            trackInfo.codec = 'mp4a.40.' + objectType;
             isAudio = true;
             break;
           case 'mp3':
             sampleEntry = new Iso.AudioSampleEntry('.mp3', audioDataReferenceIndex, trackInfo.channels, trackInfo.samplesize, trackInfo.samplerate);
+            trackInfo.codec = 'mp3';
             isAudio = true;
             break;
           case 'avc1':
@@ -394,13 +402,19 @@ module RtmpJs.MP4 {
             (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
               new Iso.RawTag('avcC', avcC)
             ];
+            var codecProfile = (avcC[1] << 16) | (avcC[2] << 8) | avcC[3];
+            // avc1.XXYYZZ -- XX - profile + YY - constraints + ZZ - level
+            trackInfo.codec = 'avc1.' + (0x1000000 | codecProfile).toString(16).substr(1);
             isAudio = false;
+            brands.push('iso2', 'avc1', 'mp41');
             break;
           case 'vp6f':
             sampleEntry = new Iso.VideoSampleEntry('VP6F', videoDataReferenceIndex, trackInfo.width, trackInfo.height);
             (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
               new Iso.RawTag('glbl', hex('00'))
             ];
+            // TODO to lie about codec to get it playing in MSE?
+            trackInfo.codec = 'avc1.42001E';
             isAudio = false;
             break;
           default:
@@ -464,6 +478,7 @@ module RtmpJs.MP4 {
       ]);
       var mvhd = new Iso.MovieHeaderBox(1000, 0 /* unknown duration */, tracks.length);
       var moov = new Iso.MovieBox(mvhd, traks, mvex, udat);
+      var ftype = new Iso.FileTypeBox('isom', 0x00000200, brands);
 
       var ftypeSize = ftype.layout(0);
       var moovSize = moov.layout(ftypeSize);
@@ -472,6 +487,7 @@ module RtmpJs.MP4 {
       ftype.write(header);
       moov.write(header);
 
+      this.oncodecinfo(tracks.map((t) => t.codec));
       this.ondata(header);
       this.filePos += header.length;
       this.state = MP4MuxState.MAIN_PACKETS;
