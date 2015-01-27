@@ -149,9 +149,10 @@ module RtmpJs.MP4 {
     trackId: number;
   }
 
-  interface MP4Track {
+  export interface MP4Track {
+    codecDescription?: string;
+    codecId: number;
     language: string;
-    type: string;
     timescale: number;
 
     samplerate?: number;
@@ -163,77 +164,11 @@ module RtmpJs.MP4 {
     height?: number;
   }
 
-  interface MP4Metadata {
+  export interface MP4Metadata {
     tracks: MP4Track[];
     duration: number;
     audioTrackId: number;
     videoTrackId: number;
-  }
-
-  function parseMetadata(metadata): MP4Metadata {
-    var tracks: MP4Track[] = [];
-    var audioTrackId = -1;
-    var videoTrackId = -1;
-    var duration = +metadata.asGetPublicProperty('duration');
-
-    if (metadata.asGetPublicProperty('trackinfo')) {
-      // Not in the Adobe's references, red5 specific?
-      for (var i = 0; i < metadata.asGetPublicProperty('trackinfo').length; i++) {
-        var info = metadata.asGetPublicProperty('trackinfo')[i];
-        var track: MP4Track = {
-          language: info.asGetPublicProperty('language'),
-          type: info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype'),
-          timescale: info.asGetPublicProperty('timescale')
-        };
-        if (info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype') === metadata.asGetPublicProperty('audiocodecid')) {
-          audioTrackId = i;
-          track.samplerate = +metadata.asGetPublicProperty('audiosamplerate');
-          track.channels = +metadata.asGetPublicProperty('audiochannels');
-          track.samplesize = 16;
-        } else if (info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype')  === metadata.asGetPublicProperty('videocodecid')) {
-          videoTrackId = i;
-          track.framerate = +metadata.asGetPublicProperty('videoframerate');
-          track.width = +metadata.asGetPublicProperty('width');
-          track.height = +metadata.asGetPublicProperty('height');
-        }
-        tracks.push(track);
-      }
-    } else {
-      if (metadata.asGetPublicProperty('audiocodecid')) {
-        if (metadata.asGetPublicProperty('audiocodecid') !== 2) {
-          throw new Error('unsupported audio codec: ' + metadata.asGetPublicProperty('audiocodec'));
-        }
-        audioTrackId = tracks.length;
-        tracks.push({
-          language: "unk",
-          type: "mp3",
-          timescale: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
-          samplerate: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
-          channels: +metadata.asGetPublicProperty('audiochannels') || 2,
-          samplesize: 16
-        });
-      }
-      if (metadata.asGetPublicProperty('videocodecid')) {
-        if (metadata.asGetPublicProperty('videocodecid') !== 4) {
-          throw new Error('unsupported video codec: ' + metadata.asGetPublicProperty('videocodecid'));
-        }
-        videoTrackId = tracks.length;
-        tracks.push({
-          language: "unk",
-          type: "vp6f",
-          timescale: Math.round(metadata.asGetPublicProperty('framerate') * 1000),
-          framerate: +metadata.asGetPublicProperty('framerate'),
-          width: +metadata.asGetPublicProperty('width'),
-          height: +metadata.asGetPublicProperty('height')
-        });
-      }
-    }
-    return {
-      tracks: tracks,
-      duration: duration,
-      audioTrackId: audioTrackId,
-      videoTrackId: videoTrackId
-    };
   }
 
   enum MP4MuxState {
@@ -248,7 +183,7 @@ module RtmpJs.MP4 {
     cachedDuration: number;
     samplesProcessed: number;
     initializationData: Uint8Array[];
-    codec?: string;
+    mimeTypeCodec?: string;
   }
 
   export class MP4Mux {
@@ -270,8 +205,8 @@ module RtmpJs.MP4 {
       throw new Error('MP4Mux.ondata is not set');
     };
 
-    public constructor(metadata) {
-      this.metadata = parseMetadata(metadata);
+    public constructor(metadata: MP4Metadata) {
+      this.metadata = metadata;
 
       this.trackStates = this.metadata.tracks.map((t, index) => {
         var state = {
@@ -306,9 +241,12 @@ module RtmpJs.MP4 {
         case AUDIO_PACKET: // audio
           var audioTrack = this.audioTrackState;
           var audioPacket = parseAudiodata(data);
+          if (!audioTrack || audioTrack.trackInfo.codecId !== audioPacket.codecId) {
+            throw new Error('Unexpected audio packet codec: ' + audioPacket.codecDescription);
+          }
           switch (audioPacket.codecId) {
             default:
-              throw new Error('unsupported audio codec: ' + audioPacket.codecDescription);
+              throw new Error('Unsupported audio codec: ' + audioPacket.codecDescription);
             case MP3_SOUND_CODEC_ID:
               break; // supported codec
             case AAC_SOUND_CODEC_ID:
@@ -323,6 +261,9 @@ module RtmpJs.MP4 {
         case VIDEO_PACKET:
           var videoTrack = this.videoTrackState;
           var videoPacket = parseVideodata(data);
+          if (!videoTrack || videoTrack.trackInfo.codecId !== videoPacket.codecId) {
+            throw new Error('Unexpected video packet codec: ' + videoPacket.codecDescription);
+          }
           switch (videoPacket.codecId) {
             default:
               throw new Error('unsupported video codec: ' + videoPacket.codecDescription);
@@ -358,7 +299,7 @@ module RtmpJs.MP4 {
 
     private _checkIfNeedHeaderData() {
       if (this.trackStates.some((ts) =>
-        ts.trackInfo.type === 'mp4a' || ts.trackInfo.type === 'avc1')) {
+        ts.trackInfo.codecId === AAC_SOUND_CODEC_ID || ts.trackInfo.codecId === AVC_VIDEO_CODEC_ID)) {
         this.state = MP4MuxState.NEED_HEADER_DATA;
       } else {
         this.state = MP4MuxState.CAN_GENERATE_HEADER;
@@ -367,9 +308,9 @@ module RtmpJs.MP4 {
 
     private _tryGenerateHeader() {
       var allInitializationDataExists = this.trackStates.every((ts) => {
-        switch (ts.trackInfo.type) {
-          case 'mp4a':
-          case 'avc1':
+        switch (ts.trackInfo.codecId) {
+          case AAC_SOUND_CODEC_ID:
+          case AVC_VIDEO_CODEC_ID:
             return ts.initializationData.length > 0;
           default:
             return true;
@@ -386,8 +327,8 @@ module RtmpJs.MP4 {
         var trackState = this.trackStates[i];
         var trackInfo = trackState.trackInfo;
         var sampleEntry: Iso.SampleEntry;
-        switch (trackInfo.type) {
-          case 'mp4a':
+        switch (trackInfo.codecId) {
+          case AAC_SOUND_CODEC_ID:
             var audioSpecificConfig = trackState.initializationData[0];
             sampleEntry = new Iso.AudioSampleEntry('mp4a', audioDataReferenceIndex, trackInfo.channels, trackInfo.samplesize, trackInfo.samplerate);
 
@@ -405,13 +346,13 @@ module RtmpJs.MP4 {
             ];
             var objectType = (audioSpecificConfig[0] >> 3); // TODO 31
             // mp4a.40.objectType
-            trackState.codec = 'mp4a.40.' + objectType;
+            trackState.mimeTypeCodec = 'mp4a.40.' + objectType;
             break;
-          case 'mp3':
+          case MP3_SOUND_CODEC_ID:
             sampleEntry = new Iso.AudioSampleEntry('.mp3', audioDataReferenceIndex, trackInfo.channels, trackInfo.samplesize, trackInfo.samplerate);
-            trackState.codec = 'mp3';
+            trackState.mimeTypeCodec = 'mp3';
             break;
-          case 'avc1':
+          case AVC_VIDEO_CODEC_ID:
             var avcC = trackState.initializationData[0];
             sampleEntry = new Iso.VideoSampleEntry('avc1', videoDataReferenceIndex, trackInfo.width, trackInfo.height);
             (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
@@ -419,16 +360,16 @@ module RtmpJs.MP4 {
             ];
             var codecProfile = (avcC[1] << 16) | (avcC[2] << 8) | avcC[3];
             // avc1.XXYYZZ -- XX - profile + YY - constraints + ZZ - level
-            trackState.codec = 'avc1.' + (0x1000000 | codecProfile).toString(16).substr(1);
+            trackState.mimeTypeCodec = 'avc1.' + (0x1000000 | codecProfile).toString(16).substr(1);
             brands.push('iso2', 'avc1', 'mp41');
             break;
-          case 'vp6f':
+          case VP6_VIDEO_CODEC_ID:
             sampleEntry = new Iso.VideoSampleEntry('VP6F', videoDataReferenceIndex, trackInfo.width, trackInfo.height);
             (<Iso.VideoSampleEntry>sampleEntry).otherBoxes = [
               new Iso.RawTag('glbl', hex('00'))
             ];
             // TODO to lie about codec to get it playing in MSE?
-            trackState.codec = 'avc1.42001E';
+            trackState.mimeTypeCodec = 'avc1.42001E';
             break;
           default:
             throw new Error('not supported track type');
@@ -501,7 +442,7 @@ module RtmpJs.MP4 {
       ftype.write(header);
       moov.write(header);
 
-      this.oncodecinfo(this.trackStates.map((ts) => ts.codec));
+      this.oncodecinfo(this.trackStates.map((ts) => ts.mimeTypeCodec));
       this.ondata(header);
       this.filePos += header.length;
       this.state = MP4MuxState.MAIN_PACKETS;
@@ -519,7 +460,7 @@ module RtmpJs.MP4 {
           j--;
         }
         if (j > 0) {
-          // We have only keyframes and only the first frame is a keyframe...
+          // We have keyframes and not only the first frame is a keyframe...
           cachedPackets = cachedPackets.slice(0, j);
         }
       }
@@ -550,9 +491,9 @@ module RtmpJs.MP4 {
         var trunSamples: Iso.TrackRunSample[];
 
         trafDataStarts.push(tdatPosition);
-        switch (trackInfo.type) {
-          case 'mp4a':
-          case 'mp3':
+        switch (trackInfo.codecId) {
+          case AAC_SOUND_CODEC_ID:
+          case MP3_SOUND_CODEC_ID:
             trunSamples = [];
             for (var j = 0; j < trackPackets.length; j++) {
               var audioPacket: AudioPacket = trackPackets[j].packet;
@@ -569,8 +510,8 @@ module RtmpJs.MP4 {
             trun = new Iso.TrackRunBox(trunFlags, trunSamples, 0 /* data offset */, 0 /* first flags */);
             trackState.cachedDuration = Math.round(trackState.samplesProcessed * trackInfo.timescale / trackInfo.samplerate);
             break;
-          case 'avc1':
-          case 'vp6f':
+          case AVC_VIDEO_CODEC_ID:
+          case VP6_VIDEO_CODEC_ID:
             trunSamples = [];
             var samplesProcessed = trackState.samplesProcessed;
             var decodeTime = samplesProcessed * trackInfo.timescale / trackInfo.framerate;
@@ -602,7 +543,7 @@ module RtmpJs.MP4 {
             trackState.samplesProcessed = samplesProcessed;
             break;
           default:
-            throw new Error('unsupported codec');
+            throw new Error('Un codec');
         }
 
         var traf = new Iso.TrackFragmentBox(tfhd, tfdt, trun);
@@ -630,4 +571,107 @@ module RtmpJs.MP4 {
     }
   }
 
+  export function parseFLVMetadata(metadata: any): MP4Metadata {
+    var tracks: MP4Track[] = [];
+    var audioTrackId = -1;
+    var videoTrackId = -1;
+
+    var duration = +metadata.asGetPublicProperty('duration');
+
+    var audioCodec, audioCodecId;
+    var audioCodecCode = metadata.asGetPublicProperty('audiocodecid');
+    switch (audioCodecCode) {
+      case MP3_SOUND_CODEC_ID:
+      case 'mp3':
+        audioCodec = 'mp3';
+        audioCodecId = MP3_SOUND_CODEC_ID;
+        break;
+      case AAC_SOUND_CODEC_ID:
+      case 'mp4a':
+        audioCodec = 'mp4a';
+        audioCodecId = AAC_SOUND_CODEC_ID;
+        break;
+      default:
+        if (!isNaN(audioCodecCode)) {
+          throw new Error('Unsupported audio codec: ' + audioCodecCode);
+        }
+        audioCodec = null;
+        audioCodecId = -1;
+        break;
+    }
+
+    var videoCodec, videoCodecId;
+    var videoCodecCode = metadata.asGetPublicProperty('videocodecid');
+    switch (videoCodecCode) {
+      case VP6_VIDEO_CODEC_ID:
+      case 'vp6f':
+        videoCodec = 'vp6f';
+        videoCodecId = VP6_VIDEO_CODEC_ID;
+        break;
+      case AVC_VIDEO_CODEC_ID:
+      case 'avc1':
+        videoCodec = 'avc1';
+        videoCodecId = AVC_VIDEO_CODEC_ID;
+        break;
+      default:
+        if (!isNaN(videoCodecCode)) {
+          throw new Error('Unsupported video codec: ' + videoCodecCode);
+        }
+        videoCodec = null;
+        videoCodecId = -1;
+        break;
+    }
+
+    var audioTrack: MP4Track = (audioCodec === null) ? null : {
+      codecDescription: audioCodec,
+      codecId: audioCodecId,
+      language: 'und',
+      timescale: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
+      samplerate: +metadata.asGetPublicProperty('audiosamplerate') || 44100,
+      channels: +metadata.asGetPublicProperty('audiochannels') || 2,
+      samplesize: 16
+    };
+    var videoTrack: MP4Track = (videoCodec === null) ? null : {
+      codecDescription: videoCodec,
+      codecId: videoCodecId,
+      language: 'und',
+      timescale: 60000,
+      framerate: +metadata.asGetPublicProperty('videoframerate') ||
+                 +metadata.asGetPublicProperty('framerate'),
+      width: +metadata.asGetPublicProperty('width'),
+      height: +metadata.asGetPublicProperty('height')
+    };
+
+    var trackInfos = metadata.asGetPublicProperty('trackinfo');
+    if (trackInfos) {
+      // Not in the Adobe's references, red5 specific?
+      for (var i = 0; i < trackInfos.length; i++) {
+        var info = trackInfos[i];
+        var sampleDescription = info.asGetPublicProperty('sampledescription')[0];
+        if (sampleDescription.asGetPublicProperty('sampletype') === audioCodecCode) {
+          audioTrack.language = info.asGetPublicProperty('language');
+          audioTrack.timescale = +info.asGetPublicProperty('timescale');
+        } else if (sampleDescription.asGetPublicProperty('sampletype') === videoCodecCode) {
+          videoTrack.language = info.asGetPublicProperty('language');
+          videoTrack.timescale = +info.asGetPublicProperty('timescale');
+        }
+      }
+    }
+
+    if (videoTrack) {
+      videoTrackId = tracks.length;
+      tracks.push(videoTrack);
+    }
+    if (audioTrack) {
+      audioTrackId = tracks.length;
+      tracks.push(audioTrack);
+    }
+
+    return {
+      tracks: tracks,
+      duration: duration,
+      audioTrackId: audioTrackId,
+      videoTrackId: videoTrackId
+    };
+  }
 }
