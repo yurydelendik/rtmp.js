@@ -48,14 +48,18 @@ module RtmpJs.MP4 {
   function parseAudiodata(data: Uint8Array): AudioPacket {
     var i = 0;
     var packetType = AudioPacketType.RAW;
-    var codecId = data[i] >> 4;
+    var flags = data[i];
+    var codecId = flags >> 4;
+    var soundRateId = (flags >> 2) & 3;
+    var sampleSize =  flags & 2 ? 16 : 8;
+    var channels = flags & 1 ? 2 : 1;
     var samples: number;
     i++;
     switch (codecId) {
       case AAC_SOUND_CODEC_ID:
         var type = data[i++];
         packetType = <AudioPacketType>type;
-        samples = 1024; // ????
+        samples = 1024; // AAC implementations typically represent 1024 PCM audio samples
         break;
       case MP3_SOUND_CODEC_ID:
         var version = (data[i + 1] >> 3) & 3; // 3 - MPEG 1
@@ -64,14 +68,13 @@ module RtmpJs.MP4 {
           (layer === 3 ? 384 : 1152);
         break;
     }
-    var data = data.subarray(i);
     return {
       codecDescription: SOUNDFORMATS[codecId],
       codecId: codecId,
-      data: data,
-      rate: SOUNDRATES[(data[i] >> 2) & 3],
-      size: data[i] & 2 ? 16 : 8,
-      channels: data[i] & 1 ? 2 : 1,
+      data: data.subarray(i),
+      rate: SOUNDRATES[soundRateId],
+      size: sampleSize,
+      channels: channels,
       samples: samples,
       packetType: packetType
     };
@@ -100,8 +103,8 @@ module RtmpJs.MP4 {
     codecId: number;
     codecDescription: string;
     data: Uint8Array;
-    packetType?: VideoPacketType;
-    compositionTime?: number;
+    packetType: VideoPacketType;
+    compositionTime: number;
     horizontalOffset?: number;
     verticalOffset?: number;
   }
@@ -127,6 +130,7 @@ module RtmpJs.MP4 {
         result.packetType = VideoPacketType.NALU;
         result.horizontalOffset = (data[i] >> 4) & 15;
         result.verticalOffset = data[i] & 15;
+        result.compositionTime = 0;
         i++;
         break;
     }
@@ -150,6 +154,7 @@ module RtmpJs.MP4 {
     timescale: number;
     cache: CachedPacket[];
     cachedDuration: number;
+    samplesProcessed: number;
 
     samplerate?: number;
     channels?: number;
@@ -186,6 +191,7 @@ module RtmpJs.MP4 {
           timescale: info.asGetPublicProperty('timescale'),
           cache: [],
           cachedDuration: 0,
+          samplesProcessed: 0,
           initializationData: []
         };
         if (info.asGetPublicProperty('sampledescription')[0].asGetPublicProperty('sampletype') === metadata.asGetPublicProperty('audiocodecid')) {
@@ -215,7 +221,8 @@ module RtmpJs.MP4 {
           channels: +metadata.asGetPublicProperty('audiochannels') || 2,
           samplesize: 16,
           cache: [],
-          cachedDuration: 0
+          cachedDuration: 0,
+          samplesProcessed: 0
         });
       }
       if (metadata.asGetPublicProperty('videocodecid')) {
@@ -226,12 +233,13 @@ module RtmpJs.MP4 {
         tracks.push({
           language: "unk",
           type: "vp6f",
-          timescale: 10000,
+          timescale: Math.round(metadata.asGetPublicProperty('framerate') * 1000),
           framerate: +metadata.asGetPublicProperty('framerate'),
           width: +metadata.asGetPublicProperty('width'),
           height: +metadata.asGetPublicProperty('height'),
           cache: [],
-          cachedDuration: 0
+          cachedDuration: 0,
+          samplesProcessed: 0
         });
       }
     }
@@ -422,9 +430,10 @@ module RtmpJs.MP4 {
         }
 
         var trak;
+        var trakFlags = Iso.TrackHeaderFlags.TRACK_ENABLED | Iso.TrackHeaderFlags.TRACK_IN_MOVIE;
         if (isAudio) {
           trak = new Iso.TrackBox(
-            new Iso.TrackHeaderBox(0x00000F, trackId, -1, 0 /*width*/, 0 /*height*/, 1.0, i),
+            new Iso.TrackHeaderBox(trakFlags, trackId, -1, 0 /*width*/, 0 /*height*/, 1.0, i),
             new Iso.MediaBox(
               new Iso.MediaHeaderBox(trackInfo.timescale, -1, trackInfo.language),
               new Iso.HandlerBox('soun', 'SoundHandler'),
@@ -444,7 +453,7 @@ module RtmpJs.MP4 {
           );
         } else { // isVideo
           trak = new Iso.TrackBox(
-            new Iso.TrackHeaderBox(0x00000F, trackId, -1, trackInfo.width, trackInfo.height, 0 /* volume */, i),
+            new Iso.TrackHeaderBox(trakFlags, trackId, -1, trackInfo.width, trackInfo.height, 0 /* volume */, i),
             new Iso.MediaBox(
               new Iso.MediaHeaderBox(trackInfo.timescale, -1, trackInfo.language),
               new Iso.HandlerBox('vide', 'VideoHandler'),
@@ -500,7 +509,6 @@ module RtmpJs.MP4 {
       var trafs: Iso.TrackFragmentBox[] = [];
       var trafDataStarts: number[] = [];
 
-      var moofHeader = new Iso.MovieFragmentHeaderBox(++this.chunkIndex);
       for (var i = 0; i < tracks.length; i++) {
         var trackInfo = tracks[i], trackId = i + 1;
         var cachedPackets: CachedPacket[] = trackInfo.cache;
@@ -508,14 +516,12 @@ module RtmpJs.MP4 {
           continue;
         }
 
-        //var currentTrackTime = (cachedPackets[0].timestamp * trackInfo.timescale / 1000) | 0;
-        //var tfdt = new Iso.TrackFragmentBaseMediaDecodeTimeBox(currentTrackTime);
+        //var currentTimestamp = (cachedPackets[0].timestamp * trackInfo.timescale / 1000) | 0;
         var tfdt = new Iso.TrackFragmentBaseMediaDecodeTimeBox(trackInfo.cachedDuration);
         var tfhd: Iso.TrackFragmentHeaderBox;
         var trun: Iso.TrackRunBox;
         var trunSamples: Iso.TrackRunSample[];
 
-        var totalDuration = 0;
         trafDataStarts.push(tdatPosition);
         switch (trackInfo.type) {
           case 'mp4a':
@@ -523,49 +529,70 @@ module RtmpJs.MP4 {
             trunSamples = [];
             for (var j = 0; j < cachedPackets.length; j++) {
               var audioPacket: AudioPacket = cachedPackets[j].packet;
-              var audioFrameDuration = (audioPacket.samples / trackInfo.samplerate * trackInfo.timescale) | 0;
+              var audioFrameDuration = Math.round(audioPacket.samples * trackInfo.timescale / trackInfo.samplerate);
               tdatParts.push(audioPacket.data);
               tdatPosition += audioPacket.data.length;
               trunSamples.push({duration: audioFrameDuration, size: audioPacket.data.length});
-              totalDuration += audioFrameDuration;
+              trackInfo.samplesProcessed += audioPacket.samples;
             }
             this.cachedPackets -= cachedPackets.length;
-            cachedPackets.length = 0; // removed all audio packets
-            tfhd = new Iso.TrackFragmentHeaderBox(0x020038, trackId, 0 /* offset */, 0 /* index */, 0x00000400 /* ? */, 0x0000001A /* sample size ? */, 0x02000000);
-            trun = new Iso.TrackRunBox(0x000305, trunSamples, 0, 0x02000000);
+            cachedPackets.splice(0, cachedPackets.length); // removed all audio packets
+            var tfhdFlags = Iso.TrackFragmentFlags.DEFAULT_SAMPLE_FLAGS_PRESENT;
+            tfhd = new Iso.TrackFragmentHeaderBox(tfhdFlags, trackId, 0 /* offset */, 0 /* index */, 0 /* duration */, 0 /* size */, Iso.SampleFlags.SAMPLE_DEPENDS_ON_NO_OTHERS);
+            var trunFlags = Iso.TrackRunFlags.DATA_OFFSET_PRESENT |
+                            Iso.TrackRunFlags.SAMPLE_DURATION_PRESENT | Iso.TrackRunFlags.SAMPLE_SIZE_PRESENT;
+            trun = new Iso.TrackRunBox(trunFlags, trunSamples, 0 /* data offset */, 0 /* first flags */);
+            trackInfo.cachedDuration = Math.round(trackInfo.samplesProcessed * trackInfo.timescale / trackInfo.samplerate);
             break;
           case 'avc1':
           case 'vp6f':
             var packetsToProcess = cachedPackets.length;
             if (SPLIT_AT_KEYFRAMES) {
-              var j = packetsToProcess;
-              while (j > 0 && cachedPackets[j - 1].packet.frameType !== VideoFrameType.KEY) {
+              var j = packetsToProcess - 1;
+              while (j > 0 && cachedPackets[j].packet.frameType !== VideoFrameType.KEY) {
                 j--;
               }
-              if (j <= 0) { // we have only non-keyframes...
+              if (j <= 0) { // we have only non-keyframes or only first is a keyframe...
                 continue; // skipping writing these packets
               }
               packetsToProcess = j;
             }
-            var videoFrameDuration = (trackInfo.timescale / trackInfo.framerate) | 0;
+
             trunSamples = [];
-            totalDuration = packetsToProcess * videoFrameDuration;
+            var samplesProcessed = trackInfo.samplesProcessed;
+            var decodeTime = samplesProcessed * trackInfo.timescale / trackInfo.framerate;
+            var lastTime = Math.round(decodeTime);
             for (var j = 0; j < packetsToProcess; j++) {
               var videoPacket: VideoPacket = cachedPackets[j].packet;
+              samplesProcessed++;
+              var nextTime = Math.round(samplesProcessed * trackInfo.timescale / trackInfo.framerate);
+              var videoFrameDuration = nextTime - lastTime;
+              lastTime = nextTime;
+              var compositionTime = Math.round(samplesProcessed * trackInfo.timescale / trackInfo.framerate +
+                                               videoPacket.compositionTime * trackInfo.timescale / 1000);
+
               tdatParts.push(videoPacket.data);
               tdatPosition += videoPacket.data.length;
-              var frameFlags = cachedPackets[j].packet.frameType !== VideoFrameType.KEY ? 0x01010000 : 0x02000000;
-              trunSamples.push({size: videoPacket.data.length, flags: frameFlags, compositionTimeOffset: videoPacket.compositionTime});
+              var frameFlags = videoPacket.frameType === VideoFrameType.KEY ?
+                               Iso.SampleFlags.SAMPLE_DEPENDS_ON_NO_OTHERS :
+                               (Iso.SampleFlags.SAMPLE_DEPENDS_ON_OTHER | Iso.SampleFlags.SAMPLE_IS_NOT_SYNC);
+              trunSamples.push({duration: videoFrameDuration, size: videoPacket.data.length,
+                                flags: frameFlags, compositionTimeOffset: (compositionTime - nextTime)});
             }
             this.cachedPackets -= packetsToProcess;
             cachedPackets.splice(0, packetsToProcess); // removed processed video packets
-            tfhd = new Iso.TrackFragmentHeaderBox(0x020038, trackId, 0 /* offset */, 0 /* index */, videoFrameDuration, 0x0000127B /* sample size ? */, 0x01010000);
-            trun = new Iso.TrackRunBox(0x000E01, trunSamples, 0, 0);
+            var tfhdFlags = Iso.TrackFragmentFlags.DEFAULT_SAMPLE_FLAGS_PRESENT;
+            tfhd = new Iso.TrackFragmentHeaderBox(tfhdFlags, trackId, 0 /* offset */, 0 /* index */, 0 /* duration */, 0 /* size */, Iso.SampleFlags.SAMPLE_DEPENDS_ON_NO_OTHERS);
+            var trunFlags = Iso.TrackRunFlags.DATA_OFFSET_PRESENT |
+                            Iso.TrackRunFlags.SAMPLE_DURATION_PRESENT | Iso.TrackRunFlags.SAMPLE_SIZE_PRESENT |
+                            Iso.TrackRunFlags.SAMPLE_FLAGS_PRESENT | Iso.TrackRunFlags.SAMPLE_COMPOSITION_TIME_OFFSET;
+            trun = new Iso.TrackRunBox(trunFlags, trunSamples, 0 /* data offset */, 0 /* first flag */ );
+            trackInfo.cachedDuration = lastTime;
+            trackInfo.samplesProcessed = samplesProcessed;
             break;
           default:
             throw new Error('unsupported codec');
         }
-        trackInfo.cachedDuration += totalDuration;
         trackInfo.cache = [];
 
         var traf = new Iso.TrackFragmentBox(tfhd, tfdt, trun);
@@ -575,6 +602,7 @@ module RtmpJs.MP4 {
         return; // no data to produce
       }
 
+      var moofHeader = new Iso.MovieFragmentHeaderBox(++this.chunkIndex);
       var moof = new Iso.MovieFragmentBox(moofHeader, trafs);
       var moofSize = moof.layout(0);
       var mdat = new Iso.MediaDataBox(tdatParts);

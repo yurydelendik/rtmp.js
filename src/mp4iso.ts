@@ -154,7 +154,7 @@ module RtmpJs.MP4.Iso {
       this.compatibleBrands.forEach((brand: string) => {
         writeInt32(data, this.offset + offset, decodeInt32(brand));
         offset += 4;
-      });
+      }, this);
       return offset;
     }
   }
@@ -249,6 +249,12 @@ module RtmpJs.MP4.Iso {
       offset += 4;
       return offset;
     }
+  }
+
+  export enum TrackHeaderFlags {
+    TRACK_ENABLED = 0x000001,
+    TRACK_IN_MOVIE = 0x000002,
+    TRACK_IN_PREVIEW = 0x000004,
   }
 
   export class TrackHeaderBox extends FullBox {
@@ -583,11 +589,13 @@ module RtmpJs.MP4.Iso {
     }
   }
 
-  var BASE_DATA_OFFSET_PRESENT_TF_FLAG = 0x000001;
-  var SAMPLE_DESCRIPTION_INDEX_PRESENT_TF_FLAG = 0x000002;
-  var DEFAULT_SAMPLE_DURATION_PRESENT_TF_FLAG = 0x000008;
-  var DEFAULT_SAMPLE_SIZE_PRESENT_TF_FLAG = 0x0000010;
-  var DEFAULT_SAMPLE_FLAGS_PRESENT_TF_FLAG = 0x000020;
+  export enum TrackFragmentFlags {
+    BASE_DATA_OFFSET_PRESENT = 0x000001,
+    SAMPLE_DESCRIPTION_INDEX_PRESENT = 0x000002,
+    DEFAULT_SAMPLE_DURATION_PRESENT = 0x000008,
+    DEFAULT_SAMPLE_SIZE_PRESENT = 0x0000010,
+    DEFAULT_SAMPLE_FLAGS_PRESENT = 0x000020,
+  }
 
   export class TrackFragmentHeaderBox extends FullBox {
     constructor(flags: number,
@@ -603,19 +611,19 @@ module RtmpJs.MP4.Iso {
     public layout(offset: number): number {
       var size = super.layout(offset) + 4;
       var flags = this.flags;
-      if (!!(flags & BASE_DATA_OFFSET_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.BASE_DATA_OFFSET_PRESENT)) {
         size += 8;
       }
-      if (!!(flags & SAMPLE_DESCRIPTION_INDEX_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.SAMPLE_DESCRIPTION_INDEX_PRESENT)) {
         size += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_DURATION_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_DURATION_PRESENT)) {
         size += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_SIZE_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_SIZE_PRESENT)) {
         size += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_FLAGS_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_FLAGS_PRESENT)) {
         size += 4;
       }
       return (this.size = size);
@@ -626,24 +634,24 @@ module RtmpJs.MP4.Iso {
       var flags = this.flags;
       writeInt32(data, this.offset + offset, this.trackId);
       offset += 4;
-      if (!!(flags & BASE_DATA_OFFSET_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.BASE_DATA_OFFSET_PRESENT)) {
         writeInt32(data, this.offset + offset, 0);
         writeInt32(data, this.offset + offset + 4, this.baseDataOffset);
         offset += 8;
       }
-      if (!!(flags & SAMPLE_DESCRIPTION_INDEX_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.SAMPLE_DESCRIPTION_INDEX_PRESENT)) {
         writeInt32(data, this.offset + offset, this.sampleDescriptionIndex);
         offset += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_DURATION_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_DURATION_PRESENT)) {
         writeInt32(data, this.offset + offset, this.defaultSampleDuration);
         offset += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_SIZE_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_SIZE_PRESENT)) {
         writeInt32(data, this.offset + offset, this.defaultSampleSize);
         offset += 4;
       }
-      if (!!(flags & DEFAULT_SAMPLE_FLAGS_PRESENT_TF_FLAG)) {
+      if (!!(flags & TrackFragmentFlags.DEFAULT_SAMPLE_FLAGS_PRESENT)) {
         writeInt32(data, this.offset + offset, this.defaultSampleFlags);
         offset += 4;
       }
@@ -676,12 +684,26 @@ module RtmpJs.MP4.Iso {
     }
   }
 
-  var DATA_OFFSET_PRESENT_TR_FLAG = 0x000001;
-  var FIRST_SAMPLE_FLAGS_PRESENT_TR_FLAG = 0x000004;
-  var SAMPLE_DURATION_PRESENT_TR_FLAG = 0x000100;
-  var SAMPLE_SIZE_PRESENT_TR_FLAG = 0x000200;
-  var SAMPLE_FLAGS_PRESENT_TR_FLAG = 0x000400;
-  var SAMPLE_COMPOSITION_TIME_OFFSET_TR_FLAG = 0x000800;
+  export enum SampleFlags {
+    IS_LEADING_MASK = 0x0C000000,
+    SAMPLE_DEPENDS_ON_MASK = 0x03000000,
+    SAMPLE_DEPENDS_ON_OTHER = 0x01000000,
+    SAMPLE_DEPENDS_ON_NO_OTHERS = 0x02000000,
+    SAMPLE_IS_DEPENDED_ON_MASK = 0x00C00000,
+    SAMPLE_HAS_REDUNDANCY_MASK = 0x00300000,
+    SAMPLE_PADDING_VALUE_MASK = 0x000E0000,
+    SAMPLE_IS_NOT_SYNC = 0x00010000,
+    SAMPLE_DEGRADATION_PRIORITY_MASK = 0x0000FFFF,
+  }
+
+  export enum TrackRunFlags {
+    DATA_OFFSET_PRESENT = 0x000001,
+    FIRST_SAMPLE_FLAGS_PRESENT = 0x000004,
+    SAMPLE_DURATION_PRESENT = 0x000100,
+    SAMPLE_SIZE_PRESENT = 0x000200,
+    SAMPLE_FLAGS_PRESENT = 0x000400,
+    SAMPLE_COMPOSITION_TIME_OFFSET = 0x000800,
+  }
 
   export interface TrackRunSample {
     duration?: number;
@@ -695,29 +717,29 @@ module RtmpJs.MP4.Iso {
                 public samples: TrackRunSample[],
                 public dataOffset?: number,
                 public firstSampleFlags?: number) {
-      super('trun', 0, flags);
+      super('trun', 1, flags);
     }
 
     public layout(offset: number): number {
       var size = super.layout(offset) + 4;
       var samplesCount = this.samples.length;
       var flags = this.flags;
-      if (!!(flags & DATA_OFFSET_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.DATA_OFFSET_PRESENT)) {
         size += 4;
       }
-      if (!!(flags & FIRST_SAMPLE_FLAGS_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.FIRST_SAMPLE_FLAGS_PRESENT)) {
         size += 4;
       }
-      if (!!(flags & SAMPLE_DURATION_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.SAMPLE_DURATION_PRESENT)) {
         size += 4 * samplesCount;
       }
-      if (!!(flags & SAMPLE_SIZE_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.SAMPLE_SIZE_PRESENT)) {
         size += 4 * samplesCount;
       }
-      if (!!(flags & SAMPLE_FLAGS_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.SAMPLE_FLAGS_PRESENT)) {
         size += 4 * samplesCount;
       }
-      if (!!(flags & SAMPLE_COMPOSITION_TIME_OFFSET_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.SAMPLE_COMPOSITION_TIME_OFFSET)) {
         size += 4 * samplesCount;
       }
       return (this.size = size);
@@ -729,29 +751,29 @@ module RtmpJs.MP4.Iso {
       var flags = this.flags;
       writeInt32(data, this.offset + offset, samplesCount);
       offset += 4;
-      if (!!(flags & DATA_OFFSET_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.DATA_OFFSET_PRESENT)) {
         writeInt32(data, this.offset + offset, this.dataOffset);
         offset += 4;
       }
-      if (!!(flags & FIRST_SAMPLE_FLAGS_PRESENT_TR_FLAG)) {
+      if (!!(flags & TrackRunFlags.FIRST_SAMPLE_FLAGS_PRESENT)) {
         writeInt32(data, this.offset + offset, this.firstSampleFlags);
         offset += 4;
       }
       for (var i = 0; i < samplesCount; i++) {
         var sample = this.samples[i];
-        if (!!(flags & SAMPLE_DURATION_PRESENT_TR_FLAG)) {
+        if (!!(flags & TrackRunFlags.SAMPLE_DURATION_PRESENT)) {
           writeInt32(data, this.offset + offset, sample.duration);
           offset += 4;
         }
-        if (!!(this.flags & SAMPLE_SIZE_PRESENT_TR_FLAG)) {
+        if (!!(flags & TrackRunFlags.SAMPLE_SIZE_PRESENT)) {
           writeInt32(data, this.offset + offset, sample.size);
           offset += 4;
         }
-        if (!!(this.flags & SAMPLE_FLAGS_PRESENT_TR_FLAG)) {
+        if (!!(flags & TrackRunFlags.SAMPLE_FLAGS_PRESENT)) {
           writeInt32(data, this.offset + offset, sample.flags);
           offset += 4;
         }
-        if (!!(this.flags & SAMPLE_COMPOSITION_TIME_OFFSET_TR_FLAG)) {
+        if (!!(flags & TrackRunFlags.SAMPLE_COMPOSITION_TIME_OFFSET)) {
           writeInt32(data, this.offset + offset, sample.compositionTimeOffset);
           offset += 4;
         }
@@ -783,7 +805,7 @@ module RtmpJs.MP4.Iso {
       this.chunks.forEach((chunk) => {
         data.set(chunk, this.offset + offset);
         offset += chunk.length;
-      });
+      }, this);
       return offset;
     }
   }
