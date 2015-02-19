@@ -105,7 +105,7 @@ limitations under the License.
         this.initialized = true;
         this.file = [];
         this.fileLength = 0;
-        this.mux = new RtmpJs.MP4.MP4Mux(metadata);
+        this.mux = new RtmpJs.MP4.MP4Mux(RtmpJs.MP4.parseFLVMetadata(metadata));
         this.mux.ondata = function (data) {
           if (this.fileLength > mp4MaxSize) return;
 

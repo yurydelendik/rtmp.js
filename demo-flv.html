@@ -90,6 +90,7 @@ function updateMediaSource() {
 var flvParser = null;
 var mp4Mux = null;
 var mp4File = null;
+var mimeType = null;
 function initDecoder() {
   mp4File = [];
 
@@ -104,11 +105,13 @@ function initDecoder() {
   };
   flvParser.onTag = function (data) {
     if (data.type === 18) {
-      var ba = new Shumway.AVM2.AS.flash.utils.ByteArray(data.data);
+      var ba = new Shumway.AVM2.AS.flash.utils.ByteArray();
+      ba.writeRawBytes(data.data);
+      ba.position = 0;
       var name = Shumway.AVM2.AMF0.read(ba);
       var value = Shumway.AVM2.AMF0.read(ba);
       if (name == 'onMetaData') {
-        mp4Mux = new RtmpJs.MP4.MP4Mux(value);
+        mp4Mux = new RtmpJs.MP4.MP4Mux(RtmpJs.MP4.parseFLVMetadata(value));
         mp4Mux.ondata = function onMP4Data(data) {
           mp4File.push(data);
           if (isMediaSourceEnabled) {
@@ -118,7 +121,7 @@ function initDecoder() {
       }
       return;
     }
-    mp4Mux.pushPacket(data.type, data.data);
+    mp4Mux.pushPacket(data.type, data.data, data.timestamp);
   };
   flvParser.onClose = function () {
     mp4Mux.flush();
@@ -126,7 +129,7 @@ function initDecoder() {
     flvParser = null;
 
     if (!isMediaSourceEnabled) {
-      document.getElementById('video').src = URL.createObjectURL(new Blob(mp4File, {type:'video/mp4'}));
+      document.getElementById('video').src = URL.createObjectURL(new Blob(mp4File, {type: mimeType || 'video/mp4'}));
       mp4File = null;
     }
   };
