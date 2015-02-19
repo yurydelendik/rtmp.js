@@ -140,8 +140,8 @@ module RtmpJs.MP4 {
 
   var AUDIO_PACKET = 8;
   var VIDEO_PACKET = 9;
-  var MAX_PACKETS_IN_CHUNK = 200;
-  var SPLIT_AT_KEYFRAMES = false;
+  var MAX_PACKETS_IN_CHUNK = 50;
+  var SPLIT_AT_KEYFRAMES = true;
 
   interface CachedPacket {
     packet: any;
@@ -451,7 +451,7 @@ module RtmpJs.MP4 {
     _chunk() {
       var cachedPackets = this.cachedPackets;
 
-      if (SPLIT_AT_KEYFRAMES) {
+      if (SPLIT_AT_KEYFRAMES && this.videoTrackState) {
         var j = cachedPackets.length - 1;
         var videoTrackId = this.videoTrackState.trackId;
         // Finding last video keyframe.
@@ -673,5 +673,26 @@ module RtmpJs.MP4 {
       audioTrackId: audioTrackId,
       videoTrackId: videoTrackId
     };
+  }
+
+  export function splitMetadata(metadata: MP4Metadata): MP4Metadata[] {
+    var tracks: MP4Metadata[] = [];
+    if (metadata.audioTrackId >= 0) {
+      tracks.push({
+        tracks: [metadata.tracks[metadata.audioTrackId]],
+        duration: metadata.duration,
+        audioTrackId: 0,
+        videoTrackId: -1
+      });
+    }
+    if (metadata.videoTrackId >= 0) {
+      tracks.push({
+        tracks: [metadata.tracks[metadata.videoTrackId]],
+        duration: metadata.duration,
+        audioTrackId: -1,
+        videoTrackId: 0
+      });
+    }
+    return tracks;
   }
 }
