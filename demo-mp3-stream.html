@@ -51,7 +51,7 @@ limitations under the License.
       <tr><th>Packets: </th><td id="packets">0</td></tr>
       <tr><th>MP3 file: </th><td><button onclick="mp3.generate()">Generate</button> <a id="mp3link" download="file.mp3">Download</a></td></tr>
     </table>
-    <video id="mp3audio" autoplay controls></audio>
+    <video id="mp3audio" autoplay controls></video>
     <script>
       var mp3 = {
         packets: 0,
@@ -67,7 +67,7 @@ limitations under the License.
             frame0[0] = 0x2F;
             frame0.set(frame, 1);
             this.mp4mux.pushPacket(8, frame0, this.packets);
-            //this.file.push(new Uint8Array(frame));
+            this.file.push(new Uint8Array(frame0));
           }.bind(this);
           this.mp4mux = new RtmpJs.MP4.MP4Mux({
             tracks: [{codecId: 2, language: 'eng', timescale: 44100, samplerate: 44100, channels: 2, samplesize: 16}],
