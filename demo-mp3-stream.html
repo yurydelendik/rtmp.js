@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<!--
+Copyright 2013 Mozilla Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<html>
+  <head>
+    <script src="build/ts/rtmp.js"></script>
+  </head>
+  <body>
+    <h1>RTMP demo</h1>
+    <p>Open the web console to see messages</p>
+
+    <script>
+
+      var url = 'media/awesome.mp3';
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.responseType = 'moz-chunk-arraybuffer';
+      if (xhr.responseType !== 'moz-chunk-arraybuffer') {
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function () {
+          mp3.push(xhr.response);
+          mp3.close();
+        };
+      } else {
+        xhr.onprogress = function () {
+          mp3.push(xhr.response);
+        };
+        xhr.onload = function () {
+          mp3.close();
+        };
+      }
+      xhr.send();
+
+    </script>
+
+    <table>
+      <tr><th>Packets: </th><td id="packets">0</td></tr>
+      <tr><th>MP3 file: </th><td><button onclick="mp3.generate()">Generate</button> <a id="mp3link" download="file.mp3">Download</a></td></tr>
+    </table>
+    <video id="mp3audio" autoplay controls></audio>
+    <script>
+      var mp3 = {
+        packets: 0,
+        parser: null,
+        mp4mux: null,
+        msewriter: null,
+        file: [],
+        init: function () {
+          this.parser = new RtmpJs.MP3.MP3Parser();
+          this.parser.onFrame = function (frame) {
+            document.getElementById('packets').textContent = ++this.packets;
+            var frame0 = new Uint8Array(frame.length + 1);
+            frame0[0] = 0x2F;
+            frame0.set(frame, 1);
+            this.mp4mux.pushPacket(8, frame0, this.packets);
+            //this.file.push(new Uint8Array(frame));
+          }.bind(this);
+          this.mp4mux = new RtmpJs.MP4.MP4Mux({
+            tracks: [{codecId: 2, language: 'eng', timescale: 44100, samplerate: 44100, channels: 2, samplesize: 16}],
+            audioTrackId: 0,
+            videoTrackId: -1,
+            duration: 0
+          });
+          this.mp4mux.oncodecinfo = function (codecs) {
+            dataSource.mimeType = 'audio/mp4;codecs=\"' + codecs.join(',') + '\"';
+          };
+          this.mp4mux.ondata = function (data) {
+            dataSource.onData(data)
+          };
+          var dataSource = {
+            mimeType: '',
+            onData: null
+          };
+          var mediaSource = new MediaSource();
+          this.msewriter = new RtmpJs.MSEWriter(mediaSource);
+          this.msewriter.listen(dataSource);
+          document.getElementById('mp3audio').src = URL.createObjectURL(mediaSource);
+        },
+        push: function (data) {
+          this.parser.push(new Uint8Array(data));
+        },
+        close: function () {
+          this.parser.close();
+        },
+        generate: function () {
+          var blob = new Blob(this.file, {type: 'audio/mpeg'});
+          document.getElementById('mp3link').href =
+          document.getElementById('mp3audio').src = URL.createObjectURL(blob);
+        }
+      };
+      mp3.init();
+    </script>
+  </body>
+</html>

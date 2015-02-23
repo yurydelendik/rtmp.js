@@ -8,3 +8,4 @@
 ///<reference path='mp4iso.ts' />
 ///<reference path='mp4mux.ts' />
 ///<reference path='flvparser.ts' />
+///<reference path='mp3parser.ts' />

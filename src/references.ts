@@ -5,6 +5,8 @@
 ///<reference path='transport.ts' />
 ///<reference path='transport-browser.ts' />
 
+///<reference path='msewriter.ts' />
 ///<reference path='mp4iso.ts' />
 ///<reference path='mp4mux.ts' />
 ///<reference path='flvparser.ts' />
+///<reference path='mp3parser.ts' />
